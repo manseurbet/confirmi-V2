@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h2>Connexion vendeur</h2>
+<input id="u" placeholder="Utilisateur">
+<input id="p" type="password" placeholder="Mot de passe">
+<button onclick="go()">Connexion</button>
+
+<script>
+async function go(){
+  const res = await fetch("/login",{
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({ username:u.value, password:p.value })
+  });
+  const d = await res.json();
+  if(d.success) location.href="vendeur.html";
+  else alert("Erreur login");
+}
+</script>
+</body>
+</html>

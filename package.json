@@ -1,0 +1,32 @@
+{
+  "name": "confirmi",
+  "version": "1.0.0",
+  "description": "Application Confirmi",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.2.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.0",
+    "autoprefixer": "^10.4.27",
+    "bcryptjs": "^3.0.3",
+    "clsx": "^2.1.1",
+    "express": "^4.22.1",
+    "express-session": "^1.19.0",
+    "framer-motion": "^12.36.0",
+    "jsonwebtoken": "^9.0.3",
+    "lucide-react": "^0.577.0",
+    "multer": "^2.0.2",
+    "path": "^0.12.7",
+    "postcss": "^8.5.8",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.1",
+    "vite": "^8.0.0"
+  }
+}

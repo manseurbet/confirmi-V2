@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmi – المشرف العام</title>
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #fff; padding: 20px; text-align: right; }
+        .container { max-width: 1100px; margin: 0 auto; }
+        h1 { text-align: center; color: #38bdf8; margin-bottom: 30px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: #1e293b; padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #334155; }
+        .stat-value { font-size: 28px; font-weight: bold; color: #38bdf8; display: block; }
+        .stat-label { color: #94a3b8; font-size: 14px; margin-top: 5px; }
+        .seller-section { background: #1e293b; border-radius: 12px; overflow: hidden; margin-bottom: 20px; border: 1px solid #334155; }
+        .seller-header { background: #1e293b; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.2s; }
+        .seller-header:hover { background: #334155; }
+        .seller-info { display: flex; align-items: center; gap: 15px; }
+        .seller-id { font-weight: bold; color: #38bdf8; }
+        .seller-content { display: none; padding: 0; border-top: 1px solid #334155; }
+        .seller-content.active { display: block; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px 20px; text-align: right; border-bottom: 1px solid #334155; font-size: 14px; }
+        th { background: #0f172a; color: #94a3b8; font-weight: 500; }
+        .badge { padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+        .badge-confirmed { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+        .badge-pending { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+        .badge-refused { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+        .btn-back { background: #334155; color: white; text-decoration: none; padding: 10px 20px; border-radius: 8px; display: inline-block; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="btn-back">🏠 العودة للرئيسية</a>
+        <h1>🌍 لوحة التحكم العامة</h1>
+
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <span class="stat-value" id="totalSellers">-</span>
+                <span class="stat-label">إجمالي البائعين</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="totalTx">-</span>
+                <span class="stat-label">إجمالي المعاملات</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="confirmedTx">-</span>
+                <span class="stat-label">مؤكدة</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="refusedTx">-</span>
+                <span class="stat-label">مرفوضة</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="pendingTx">-</span>
+                <span class="stat-label">قيد الانتظار</span>
+            </div>
+        </div>
+
+        <div id="sellersContainer">
+            <p style="text-align:center;">جاري تحميل البيانات...</p>
+        </div>
+    </div>
+
+    <script>
+        async function loadData() {
+            try {
+                const res = await fetch('/admin/global-data');
+                const data = await res.json();
+                if (!data.success) throw new Error('Failed to load');
+
+                document.getElementById('totalSellers').textContent = data.sellersCount;
+                document.getElementById('totalTx').textContent = data.totalConfirmed + data.totalRefused + data.totalPending;
+                document.getElementById('confirmedTx').textContent = data.totalConfirmed;
+                document.getElementById('refusedTx').textContent = data.totalRefused;
+                document.getElementById('pendingTx').textContent = data.totalPending;
+
+                const container = document.getElementById('sellersContainer');
+                container.innerHTML = '';
+
+                for (const sellerId in data.sellersData) {
+                    const seller = data.sellersData[sellerId];
+                    const section = document.createElement('div');
+                    section.className = 'seller-section';
+                    section.innerHTML = `
+                        <div class="seller-header" onclick="toggleSeller(this)">
+                            <div class="seller-info">
+                                <span class="seller-id">👤 بائع: ${sellerId}</span>
+                                <span class="stat-label">(${seller.transactions.length} معاملة)</span>
+                            </div>
+                            <span style="color:#94a3b8">🔽 تفاصيل</span>
+                        </div>
+                        <div class="seller-content">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>الزبون</th>
+                                        <th>المنتج</th>
+                                        <th>المبلغ</th>
+                                        <th>الحالة</th>
+                                        <th>التاريخ</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${seller.transactions.map(t => `
+                                        <tr>
+                                            <td>${t.clientName}<br><small style="color:#94a3b8">${t.clientPhone}</small></td>
+                                            <td>${t.productRef}</td>
+                                            <td>${t.amount} دج</td>
+                                            <td><span class="badge ${t.confirmed ? 'badge-confirmed' : t.refused ? 'badge-refused' : 'badge-pending'}">${t.confirmed ? '✅ مؤكدة' : t.refused ? '❌ مرفوضة' : '⏳ معلقة'}</span></td>
+                                            <td>${new Date(parseInt(t.transactionId)).toLocaleDateString('fr-FR')}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                    container.appendChild(section);
+                }
+            } catch (err) {
+                document.getElementById('sellersContainer').innerHTML = '<p style="color:red; text-align:center;">خطأ في الاتصال بالخادم</p>';
+            }
+        }
+
+        function toggleSeller(header) {
+            const content = header.nextElementSibling;
+            content.classList.toggle('active');
+        }
+
+        loadData();
+    </script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Confirmi – Confirme avant de livrer</title>
+<style>
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: linear-gradient(135deg,#0f172a,#1e293b);
+  color: #fff;
+}
+.container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.box {
+  max-width: 420px;
+  width: 100%;
+  background: #0b1220;
+  border-radius: 16px;
+  padding: 32px 26px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.header-logo {
+  text-align: center;
+  margin-bottom: 24px;
+}
+.header-logo img {
+  width: 260px;
+  max-width: 85%;
+}
+.btn {
+  display: block;
+  text-decoration: none;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 17px;
+  font-weight: bold;
+  margin-bottom: 12px;
+  transition: opacity 0.2s;
+}
+.btn:hover { opacity: 0.85; }
+.btn-green  { background: #22c55e; color: #022c22; }
+.btn-slate  { background: #334155; color: #fff; }
+.btn-indigo { background: #1e1b4b; color: #fff; }
+.btn-blue   { background: #1e3a5f; color: #38bdf8; border: 1px solid #38bdf8; }
+.note {
+  margin-top: 20px;
+  font-size: 12px;
+  opacity: 0.5;
+  line-height: 1.7;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="box">
+    <div class="header-logo">
+      <img src="logo.png" alt="Confirmi">
+    </div>
+
+    <a href="/vendeur.html" class="btn btn-green">📦 إستمارة البائع</a>
+    <a href="/import.html"       class="btn btn-blue">📋 إرسال جماعي</a>
+    <a href="/transactions.html" class="btn btn-slate">🧾 قائمة المعاملات</a>
+    <a href="/admin.html"        class="btn btn-indigo">📊 الاحصائيات</a>
+
+    <div class="note">
+      بدون تطبيق • بدون تعقيد • يعمل فورًا
+    </div>
+  </div>
+</div>
+</body>
+</html>

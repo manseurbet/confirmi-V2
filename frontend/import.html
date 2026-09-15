@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Confirmi – إرسال جماعي</title>
+<style>
+body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;}
+.container{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px;}
+.box{max-width:700px;width:100%;background:#0b1220;border-radius:16px;padding:28px 24px;box-shadow:0 20px 60px rgba(0,0,0,0.4);margin-bottom:20px;}
+h2{text-align:center;color:#22c55e;margin-top:0;}
+.btn-home{background:#334155;color:white;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-size:14px;margin-bottom:20px;}
+textarea{width:100%;height:160px;background:#0f172a;border:1px solid #334155;border-radius:10px;color:#fff;padding:12px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:monospace;}
+.hint{font-size:12px;color:#64748b;margin:6px 0 16px;}
+.columns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+select{width:100%;padding:9px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#fff;font-size:13px;}
+label{font-size:13px;color:#94a3b8;display:block;margin-bottom:4px;}
+.btn-parse{width:100%;padding:13px;background:#22c55e;color:#022c22;border:none;border-radius:10px;font-size:15px;font-weight:bold;cursor:pointer;}
+.preview-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px;}
+.preview-table th{background:#1e293b;padding:8px;text-align:right;border-bottom:1px solid #334155;}
+.preview-table td{padding:8px;border-bottom:1px solid #1e293b;vertical-align:middle;}
+.preview-table tr:hover td{background:#0f172a;}
+.status-badge{font-size:11px;padding:3px 8px;border-radius:20px;}
+.badge-pending{background:#1e293b;color:#94a3b8;}
+.badge-ok{background:#166534;color:#86efac;}
+.badge-err{background:#7c2d12;color:#fca5a5;}
+.btn-send-all{width:100%;padding:13px;background:#25d366;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:bold;cursor:pointer;margin-top:14px;}
+.btn-row-wa{background:#25d366;color:#fff;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;margin-left:4px;}
+.btn-row-sms{background:#0ea5e9;color:#fff;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;}
+#progressBar{width:100%;height:6px;background:#1e293b;border-radius:4px;margin:10px 0;display:none;}
+#progressFill{height:6px;background:#22c55e;border-radius:4px;width:0%;transition:width 0.3s;}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="box">
+    <button class="btn-home" onclick="location.href='/'">🏠 العودة للرئيسية</button>
+    <h2>📋 إرسال جماعي من Google Sheets</h2>
+
+    <p style="color:#94a3b8;font-size:13px;text-align:center;margin-top:0;">
+      انسخ الأعمدة من Google Sheets والصقها هنا مباشرة
+    </p>
+
+    <textarea id="pasteArea" placeholder="الصق البيانات هنا...&#10;مثال:&#10;أحمد بن علي	0556001122	هاتف Samsung	12000	توصيل سريع&#10;فاطمة حميدة	0661223344	حذاء Nike	5500	"></textarea>
+    <div class="hint">📌 كل سطر = زبون واحد | الأعمدة مفصولة بـ Tab (نسخ مباشر من Google Sheets)</div>
+
+    <div class="columns">
+      <div>
+        <label>العمود 1</label>
+        <select id="col0"><option value="clientName">👤 اسم الزبون</option><option value="clientPhone">📞 الهاتف</option><option value="productRef">🔖 المنتج</option><option value="amount">💰 السعر</option><option value="description">📝 الوصف</option><option value="ignore">— تجاهل —</option></select>
+      </div>
+      <div>
+        <label>العمود 2</label>
+        <select id="col1"><option value="clientPhone">📞 الهاتف</option><option value="clientName">👤 اسم الزبون</option><option value="productRef">🔖 المنتج</option><option value="amount">💰 السعر</option><option value="description">📝 الوصف</option><option value="ignore">— تجاهل —</option></select>
+      </div>
+      <div>
+        <label>العمود 3</label>
+        <select id="col2"><option value="productRef">🔖 المنتج</option><option value="clientName">👤 اسم الزبون</option><option value="clientPhone">📞 الهاتف</option><option value="amount">💰 السعر</option><option value="description">📝 الوصف</option><option value="ignore">— تجاهل —</option></select>
+      </div>
+      <div>
+        <label>العمود 4</label>
+        <select id="col3"><option value="amount">💰 السعر</option><option value="clientName">👤 اسم الزبون</option><option value="clientPhone">📞 الهاتف</option><option value="productRef">🔖 المنتج</option><option value="description">📝 الوصف</option><option value="ignore">— تجاهل —</option></select>
+      </div>
+      <div>
+        <label>العمود 5</label>
+        <select id="col4"><option value="description">📝 الوصف</option><option value="clientName">👤 اسم الزبون</option><option value="clientPhone">📞 الهاتف</option><option value="productRef">🔖 المنتج</option><option value="amount">💰 السعر</option><option value="ignore">— تجاهل —</option></select>
+      </div>
+    </div>
+
+    <button class="btn-parse" onclick="parseData()">🔍 Aperçu des données</button>
+  </div>
+
+  <div class="box" id="resultsBox" style="display:none;">
+    <h2 style="color:#38bdf8;">📦 Commandes détectées</h2>
+    <div id="progressBar"><div id="progressFill"></div></div>
+    <div id="tableContainer"></div>
+    <button class="btn-send-all" onclick="createAll()">⚡ Créer et envoyer toutes les confirmations</button>
+  </div>
+
+</div>
+<script>
+const sellerId = localStorage.getItem('sellerId') || 'seller_' + Math.random().toString(36).substr(2, 9);
+localStorage.setItem('sellerId', sellerId);
+
+let rows = [];
+let createdLinks = [];
+
+function getColMapping() {
+  const mapping = [];
+  for (let i = 0; i < 5; i++) {
+    const el = document.getElementById('col' + i);
+    if (el) mapping.push(el ? el.value : 'ignore');
+  }
+  return mapping;
+}
+
+function parseData() {
+  const raw = document.getElementById('pasteArea').value.trim();
+  if (!raw) return alert('الرجاء لصق البيانات أولاً');
+
+  const mapping = getColMapping();
+  rows = [];
+
+  raw.split('\n').forEach((line, idx) => {
+    if (!line.trim()) return;
+    const cols = line.split('\t');
+    const entry = { clientName:'', clientPhone:'', productRef:'', amount:'', description:'' };
+    cols.forEach((val, i) => {
+      const field = mapping[i];
+      if (field && field !== 'ignore' && entry.hasOwnProperty(field)) {
+        entry[field] = val.trim();
+      }
+    });
+    if (entry.clientPhone || entry.clientName) rows.push({ ...entry, status: 'pending', link: '' });
+  });
+
+  if (rows.length === 0) return alert('لم يتم العثور على بيانات صحيحة');
+
+  renderTable();
+  document.getElementById('resultsBox').style.display = 'block';
+  document.getElementById('resultsBox').scrollIntoView({ behavior: 'smooth' });
+}
+
+function renderTable() {
+  const container = document.getElementById('tableContainer');
+  let html = `<table class="preview-table">
+    <thead><tr>
+      <th>#</th><th>الاسم</th><th>الهاتف</th><th>المنتج</th><th>السعر</th><th>الحالة</th><th>إرسال</th>
+    </tr></thead><tbody>`;
+
+  rows.forEach((r, i) => {
+    let badgeClass = 'badge-pending';
+    let badgeText = 'بانتظار';
+    if (r.status === 'ok') { badgeClass = 'badge-ok'; badgeText = '✅ تم'; }
+    if (r.status === 'err') { badgeClass = 'badge-err'; badgeText = '❌ خطأ'; }
+
+    let sendBtns = '';
+    if (r.status === 'ok' && r.link) {
+      const phone = r.clientPhone.replace(/^0/, '213');
+      const msg = encodeURIComponent('مرحبا، يرجى تأكيد طلبك:\n' + r.link);
+      const smsMsg = encodeURIComponent('تأكيد الطلب: ' + r.link);
+      sendBtns = `<button class="btn-row-wa" onclick="window.open('https://wa.me/${phone}?text=${msg}','_blank')">💬 WA</button>
+                  <button class="btn-row-sms" onclick="window.location.href='sms:${phone}?body=${smsMsg}'">📱 SMS</button>`;
+    }
+
+    html += `<tr>
+      <td>${i+1}</td>
+      <td>${r.clientName}</td>
+      <td>${r.clientPhone}</td>
+      <td>${r.productRef}</td>
+      <td>${r.amount} دج</td>
+      <td><span class="status-badge ${badgeClass}">${badgeText}</span></td>
+      <td>${sendBtns}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+async function createAll() {
+  const bar = document.getElementById('progressBar');
+  const fill = document.getElementById('progressFill');
+  bar.style.display = 'block';
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (r.status === 'ok') continue;
+
+    try {
+      const fd = new FormData();
+      fd.append('sellerId', sellerId);
+      fd.append('clientName', r.clientName);
+      fd.append('clientPhone', r.clientPhone);
+      fd.append('productRef', r.productRef);
+      fd.append('amount', r.amount);
+      fd.append('description', r.description);
+
+      const res = await fetch('/create-confirmation', { method: 'POST', body: fd });
+      const data = await res.json();
+
+      if (data.success) {
+        rows[i].status = 'ok';
+        rows[i].link = data.clientLink;
+      } else {
+        rows[i].status = 'err';
+      }
+    } catch(e) {
+      rows[i].status = 'err';
+    }
+
+    fill.style.width = Math.round(((i+1)/rows.length)*100) + '%';
+    renderTable();
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmi – Admin</title>
+    <style>
+        body{ margin:0; font-family:Arial, sans-serif; background:#0f172a; color:#fff; text-align: right;}
+        .container{ padding:20px; }
+        h1{ text-align:center; margin-bottom:20px; }
+        .section{ background:#0b1220; border-radius:12px; padding:15px; margin-bottom:20px; }
+        .section h2{ margin-top:0; font-size:18px; border-bottom:1px solid #1e293b; padding-bottom:6px; }
+        .stats{ display:flex; gap:15px; flex-wrap:wrap; }
+        .stat{ flex:1; background:#122135; padding:12px; border-radius:8px; text-align:center; }
+        table{ width:100%; border-collapse:collapse; margin-top:10px; }
+        th, td{ border-bottom:1px solid #1e293b; padding:8px; text-align:center; font-size:14px; }
+        th{ background:#122135; }
+        .btn-home { background: #334155; color: white; margin-bottom: 20px; padding: 10px; border-radius: 8px; border: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <button class="btn-home" onclick="location.href='/'">🏠 العودة للرئيسية</button>
+    <h1>📊 لوحة التحكم</h1>
+    <div class="section">
+        <h2>📦 إحصائيات عامة</h2>
+        <div class="stats">
+            <div class="stat"><div>إجمالي الطلبات</div><strong id="totalCmd">0</strong></div>
+            <div class="stat"><div>المؤكدة</div><strong id="confirmedCmd">0</strong></div>
+        </div>
+    </div>
+    <div class="section">
+        <h2>👥 الزبائن</h2>
+        <table id="clientsTable">
+            <thead><tr><th>الهاتف</th><th>تأكيدات</th><th>التقييم</th></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+<script>
+const sellerId = localStorage.getItem('sellerId');
+async function loadDashboard(){
+    if(!sellerId) return;
+    const res = await fetch("/admin/dashboard/" + sellerId);
+    const data = await res.json();
+    document.getElementById("totalCmd").innerText = data.stats.total;
+    document.getElementById("confirmedCmd").innerText = data.stats.confirmed;
+    const cBody = document.querySelector("#clientsTable tbody");
+    cBody.innerHTML = "";
+    for(const phone in data.clients){
+        const c = data.clients[phone];
+        cBody.innerHTML += `<tr><td>${phone}</td><td>${c.confirmed}</td><td>${c.score}% ${c.badge}</td></tr>`;
+    }
+}
+loadDashboard();
+</script>
+</body>
+</html>

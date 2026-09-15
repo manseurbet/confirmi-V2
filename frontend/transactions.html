@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="fr" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmi – Mes Transactions</title>
+    <style>
+        body{ margin:0; font-family:Arial, sans-serif; background:#0f172a; color:#fff; padding:20px; text-align: right;}
+        .container{ max-width:800px; margin:0 auto; }
+        h1{ text-align:center; color:#38bdf8; }
+        .card{ background:#1e293b; padding:15px; border-radius:10px; margin-bottom:15px; border-left:5px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+        .card.confirmed{ border-left-color:#22c55e; }
+        .card.refused{ border-left-color:#ef4444; }
+        .content-area { flex-grow: 1; }
+        .status{ font-weight:bold; }
+        .details{ font-size:14px; color:#94a3b8; }
+        .btn-view { background: #38bdf8; color: #0f172a; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: bold; }
+        .btn-home { background: #334155; color: white; margin-bottom: 20px; padding: 10px; border-radius: 8px; border: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <button class="btn-home" onclick="location.href='/'">🏠 العودة للرئيسية</button>
+    <h1>🧾 قائمة المعاملات</h1>
+    <div id="transactionsList">Chargement...</div>
+</div>
+<script>
+const sellerId = localStorage.getItem('sellerId');
+async function loadTransactions(){
+    if(!sellerId) return document.getElementById('transactionsList').innerText = 'لم يتم العثور على هوية البائع';
+    const res = await fetch('/transactions/' + sellerId);
+    const data = await res.json();
+    const list = document.getElementById('transactionsList');
+    list.innerHTML = '';
+    if(data.transactions.length === 0) list.innerHTML = 'لا توجد معاملات.';
+    data.transactions.reverse().forEach(t => {
+        const div = document.createElement('div');
+        const cardClass = t.confirmed ? 'confirmed' : t.refused ? 'refused' : '';
+        const statusLabel = t.confirmed ? '✅ مؤكدة' : t.refused ? '❌ مرفوضة' : '⏳ قيد الانتظار';
+        div.className = `card ${cardClass}`;
+        div.innerHTML = `
+            <div class="content-area">
+                <div class="status">${statusLabel}</div>
+                <div class="details">
+                    <div>👤 الزبون: ${t.clientName}</div>
+                    <div>📞 الهاتف: ${t.clientPhone}</div>
+                    <div>📦 المنتج: ${t.productRef}</div>
+                    <div>💰 السعر: ${t.amount} دج</div>
+                    ${t.confirmed && t.attachment ? `<div>📎 <a href="${t.attachment}" target="_blank" style="color: #38bdf8; text-decoration: none;">تحميل وصل التأكيد</a></div>` : ''}
+                </div>
+            </div>
+            <div class="actions"><a href="/client.html?id=${t.transactionId}" class="btn-view" target="_blank">عرض</a></div>
+        `;
+        list.appendChild(div);
+    });
+}
+loadTransactions();
+</script>
+</body>
+</html>

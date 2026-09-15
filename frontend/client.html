@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Confirmi – تأكيد الطلب</title>
+
+<style>
+body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;}
+.container{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.box{max-width:500px;width:100%;background:#0b1220;border-radius:16px;padding:32px 26px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.4);}
+.form-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.form-row label{flex:0 0 35%;text-align:left;font-weight:bold;}
+.form-row input,.form-row select{flex:1;padding:10px;border-radius:6px;border:none;background:#122135;color:#fff;}
+.form-row input[readonly]{background:#0b1220;}
+#productImage{width:100%;border-radius:12px;margin-bottom:15px;}
+button{width:100%;padding:12px;background:#22c55e;color:#022c22;border:none;border-radius:10px;font-size:16px;font-weight:bold;}
+#vendorScoreBox{margin-bottom:15px;font-size:14px;}
+#attachmentRow{display:none;}
+</style>
+</head>
+
+<body>
+<div class="container">
+<div class="box">
+
+<img src="logo.png" style="width:180px;margin-bottom:15px">
+
+<div id="vendorScoreBox">
+⭐ تقييم البائع: <span id="vendorScore">—</span>
+</div>
+
+<img id="productImage">
+
+<form id="clientForm" enctype="multipart/form-data">
+
+<div class="form-row">
+<label>👤 الاسم</label>
+<input id="clientName" readonly>
+</div>
+
+<div class="form-row">
+<label>📞 الهاتف</label>
+<input id="clientPhone" readonly>
+</div>
+
+<div class="form-row">
+<label>🔖 المنتج</label>
+<input id="productRef" readonly>
+</div>
+
+<div class="form-row">
+<label>💰 السعر</label>
+<input id="amount" readonly>
+</div>
+
+<div class="form-row">
+<label>📝 الوصف</label>
+<input id="description" readonly>
+</div>
+
+<div class="form-row">
+<label>💳 الدفع</label>
+<select id="paymentMethod">
+<option value="especes">عند الاستلام</option>
+<option value="virement">تحويل</option>
+</select>
+</div>
+
+<div class="form-row" id="attachmentRow">
+<label>📎 إثبات</label>
+<input type="file" id="attachment">
+</div>
+
+<div style="display: flex; gap: 10px;">
+  <button type="submit" style="background: #22c55e;">✅ تأكيد الطلب</button>
+  <button type="button" id="refuseBtn" style="background: #ef4444;">❌ رفض الطلب</button>
+</div>
+</form>
+
+<div id="successMessage" style="display: none; margin-top: 20px; padding: 15px; background: #166534; border-radius: 10px; font-size: 16px;">
+  <p style="margin: 0; font-weight: bold;">✅ تم التأكيد بنجاح!</p>
+  <p style="margin: 5px 0 0; opacity: 0.9; font-size: 14px;">شكراً على تأكيدك. يمكن للبائع الآن متابعة الطلب.</p>
+</div>
+
+<div id="refusedMessage" style="display: none; margin-top: 20px; padding: 15px; background: #7c2d12; border-radius: 10px; font-size: 16px;">
+  <p style="margin: 0; font-weight: bold;">❌ تم رفض الطلب</p>
+  <p style="margin: 5px 0 0; opacity: 0.9; font-size: 14px;">تم إبلاغ البائع برفضك للطلب.</p>
+</div>
+
+</div>
+</div>
+
+<script>
+function getId(){
+  return new URLSearchParams(location.search).get("id");
+}
+
+async function loadTransaction(){
+  const id = getId();
+  if(!id) return alert("رقم المعاملة مفقود");
+
+  try{
+    const res = await fetch("/transaction/"+id);
+    const data = await res.json();
+    if(!data.success) return alert("المعاملة غير موجودة");
+
+    const t = data.transaction;
+
+    clientName.value = t.clientName;
+    clientPhone.value = t.clientPhone;
+    productRef.value = t.productRef;
+    amount.value = t.amount;
+    description.value = t.description || "";
+    productImage.src = t.photo || "";
+
+    if(t.vendorScore !== undefined){
+      vendorScore.innerText = `${t.vendorScore} ⭐ (${t.vendorBadge})`;
+    }
+
+  }catch(e){
+    alert("خطأ أثناء تحميل المعاملة");
+    console.error(e);
+  }
+}
+
+loadTransaction();
+
+/* paiement */
+paymentMethod.onchange = ()=>{
+  attachmentRow.style.display =
+    paymentMethod.value==="virement" ? "flex" : "none";
+};
+
+/* confirmation */
+clientForm.onsubmit = async e=>{
+  e.preventDefault();
+  const id = getId();
+
+  const fd = new FormData();
+  fd.append("paymentMethod", paymentMethod.value);
+  if(attachment.files[0]) fd.append("attachment", attachment.files[0]);
+
+  const r = await fetch("/confirm-transaction/"+id,{method:"POST",body:fd});
+  const d = await r.json();
+  if(d.success) {
+    clientForm.style.display = "none";
+    document.getElementById("successMessage").style.display = "block";
+  } else {
+    alert(d.message || "حدث خطأ");
+  }
+};
+
+/* refusal */
+document.getElementById("refuseBtn").onclick = async ()=>{
+  if(!confirm("هل أنت متأكد من رفضك للطلب؟")) return;
+  
+  const id = getId();
+  const r = await fetch("/refuse-transaction/"+id, {method:"POST"});
+  const d = await r.json();
+  if(d.success) {
+    clientForm.style.display = "none";
+    document.getElementById("refusedMessage").style.display = "block";
+  } else {
+    alert(d.message || "حدث خطأ");
+  }
+};
+</script>
+
+</body>
+</html>
