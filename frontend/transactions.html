@@ -20,7 +20,7 @@
 </head>
 <body>
 <div class="container">
-    <button class="btn-home" onclick="location.href='/'">🏠 العودة للرئيسية</button>
+    <button class="btn-home" onclick="location.href='index.html'">🏠 العودة للرئيسية</button>
     <h1>🧾 قائمة المعاملات</h1>
     <div id="transactionsList">Chargement...</div>
 </div>
@@ -49,7 +49,7 @@ async function loadTransactions(){
                     ${t.confirmed && t.attachment ? `<div>📎 <a href="${t.attachment}" target="_blank" style="color: #38bdf8; text-decoration: none;">تحميل وصل التأكيد</a></div>` : ''}
                 </div>
             </div>
-            <div class="actions"><a href="/client.html?id=${t.transactionId}" class="btn-view" target="_blank">عرض</a></div>
+            <div class="actions"><a href="client.html?id=${t.transactionId}" class="btn-view" target="_blank">عرض</a></div>
         `;
         list.appendChild(div);
     });
