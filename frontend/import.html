@@ -137,7 +137,7 @@ function renderTable() {
 
     let sendBtns = '';
     if (r.status === 'ok' && r.link) {
-      const phone = r.clientPhone.replace(/^0/, '213');
+      const phone = r.clientPhone;
       const msg = encodeURIComponent('مرحبا، يرجى تأكيد طلبك:\n' + r.link);
       const smsMsg = encodeURIComponent('تأكيد الطلب: ' + r.link);
       sendBtns = `<button class="btn-row-wa" onclick="window.open('https://wa.me/${phone}?text=${msg}','_blank')">💬 WA</button>
@@ -183,6 +183,7 @@ async function createAll() {
       if (data.success) {
         rows[i].status = 'ok';
         rows[i].link = data.clientLink;
+        rows[i].clientPhone = data.clientPhone || rows[i].clientPhone;
       } else {
         rows[i].status = 'err';
       }

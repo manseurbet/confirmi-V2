@@ -39,6 +39,7 @@ button:hover{opacity:0.9;}
       <input type="hidden" id="sellerId">
       <label>رقم هاتف الزبون</label>
       <input type="tel" id="clientPhone" placeholder="0XXXXXXXXX" required>
+      <div id="phoneError" role="alert" style="color:#f87171;font-size:13px;"></div>
       <label>اسم الزبون</label>
       <input type="text" id="clientName" required>
       <label>رمز المنتج / اسم المنتج</label>
@@ -77,11 +78,26 @@ let clientPhoneNumber = '';
 
 const phoneInput = document.getElementById('clientPhone');
 phoneInput.addEventListener('input', async () => {
-  if (phoneInput.value.trim().length >= 10) {
-    const res = await fetch(`/score/client/${phoneInput.value.trim()}`);
+  document.getElementById('scoreNum').innerText = '--';
+  document.getElementById('badgeText').innerText = '';
+  document.getElementById('phoneError').innerText = '';
+  const phone = phoneInput.value.trim();
+  if (phone.length < 10) return;
+
+  try {
+    const res = await fetch(`/score/client/${encodeURIComponent(phone)}`);
     const data = await res.json();
+    if (phoneInput.value.trim() !== phone) return;
+    if (!res.ok) {
+      document.getElementById('phoneError').innerText = data.message || 'رقم الهاتف غير صالح';
+      return;
+    }
     document.getElementById('scoreNum').innerText = data.score + '%';
     document.getElementById('badgeText').innerText = data.badge;
+  } catch {
+    if (phoneInput.value.trim() === phone) {
+      document.getElementById('phoneError').innerText = 'تعذر التحقق من رقم الهاتف';
+    }
   }
 });
 
@@ -101,9 +117,11 @@ document.getElementById('orderForm').onsubmit = async (e) => {
   const data = await res.json();
   if (data.success) {
     generatedLink = data.clientLink;
-    clientPhoneNumber = phoneInput.value.trim().replace(/^0/, '213');
+    clientPhoneNumber = data.clientPhone;
     document.getElementById('orderForm').style.display = 'none';
     document.getElementById('resultSection').style.display = 'block';
+  } else {
+    document.getElementById('phoneError').innerText = data.message || 'تعذر إنشاء رابط التأكيد';
   }
 };
 

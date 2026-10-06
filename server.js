@@ -2,6 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
+const { normalizeClientPhone } = require("./phone");
 
 const app = express();
 const PORT = 3000;
@@ -22,6 +23,45 @@ function ensureFile(file, defaultContent) {
 
 ensureFile(transactionsFile, []);
 ensureFile(scoresFile, { clients: {}, vendeurs: {} });
+
+function normalizePhoneCounts(countsByPhone = {}) {
+  const normalized = {};
+  for (const [phone, counts] of Object.entries(countsByPhone)) {
+    const key = normalizeClientPhone(phone) || phone;
+    normalized[key] ??= { ok: 0, ko: 0 };
+    normalized[key].ok += Number.isFinite(Number(counts?.ok)) ? Number(counts.ok) : 0;
+    normalized[key].ko += Number.isFinite(Number(counts?.ko)) ? Number(counts.ko) : 0;
+  }
+  return normalized;
+}
+
+function migratePhoneData() {
+  const transactions = JSON.parse(fs.readFileSync(transactionsFile, "utf8"));
+  const originalTransactions = JSON.stringify(transactions);
+  for (const transaction of transactions) {
+    const normalized = normalizeClientPhone(transaction.clientPhone);
+    if (normalized) transaction.clientPhone = normalized;
+  }
+  if (JSON.stringify(transactions) !== originalTransactions) {
+    fs.writeFileSync(transactionsFile, JSON.stringify(transactions, null, 2));
+  }
+
+  const scoresContent = fs.readFileSync(scoresFile, "utf8");
+  const scores = JSON.parse(scoresContent);
+  scores.clients = normalizePhoneCounts(scores.clients);
+  scores.vendeurs ??= {};
+  for (const seller of Object.values(scores.vendeurs)) {
+    if (seller && typeof seller === "object") {
+      seller.clients = normalizePhoneCounts(seller.clients);
+    }
+  }
+  const normalizedScores = JSON.stringify(scores, null, 2);
+  if (normalizedScores !== scoresContent) {
+    fs.writeFileSync(scoresFile, normalizedScores);
+  }
+}
+
+migratePhoneData();
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -50,16 +90,32 @@ function badge(score) {
 }
 
 app.get("/score/client/:phone", (req, res) => {
+  const clientPhone = normalizeClientPhone(req.params.phone);
+  if (!clientPhone) {
+    return res.status(400).json({
+      success: false,
+      message: "Numéro invalide : indiquez 05, 06 ou 07 suivi de 8 chiffres, ou le même numéro avec l’indicatif +213."
+    });
+  }
+
   const scores = JSON.parse(fs.readFileSync(scoresFile, 'utf8'));
-  const client = scores.clients[req.params.phone] || { ok: 0, ko: 0 };
+  const client = scores.clients[clientPhone] || { ok: 0, ko: 0 };
   const score = computeScore(client);
-  res.json({ score, badge: badge(score) });
+  res.json({ success: true, clientPhone, score, badge: badge(score) });
 });
 
 app.post("/create-confirmation", upload.single("productPhoto"), (req, res) => {
-  const { clientName, clientPhone, productRef, amount, description, sellerId } = req.body;
-  if (!clientName || !clientPhone || !productRef || !amount || !sellerId)
-    return res.json({ success: false, message: "Missing fields" });
+  const { clientName, clientPhone: rawClientPhone, productRef, amount, description, sellerId } = req.body;
+  if (!clientName || !rawClientPhone || !productRef || !amount || !sellerId)
+    return res.status(400).json({ success: false, message: "Champs obligatoires manquants." });
+
+  const clientPhone = normalizeClientPhone(rawClientPhone);
+  if (!clientPhone) {
+    return res.status(400).json({
+      success: false,
+      message: "Numéro invalide : indiquez 05, 06 ou 07 suivi de 8 chiffres, ou le même numéro avec l’indicatif +213."
+    });
+  }
 
   const transactions = JSON.parse(fs.readFileSync(transactionsFile, 'utf8'));
   const transactionId = Date.now().toString();
@@ -72,7 +128,11 @@ app.post("/create-confirmation", upload.single("productPhoto"), (req, res) => {
   transactions.push(transaction);
   fs.writeFileSync(transactionsFile, JSON.stringify(transactions, null, 2));
   const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-  res.json({ success: true, clientLink: `${protocol}://${req.headers.host}/client.html?id=${transactionId}` });
+  res.json({
+    success: true,
+    clientPhone,
+    clientLink: `${protocol}://${req.headers.host}/client.html?id=${transactionId}`
+  });
 });
 
 app.get("/transaction/:id", (req, res) => {
@@ -94,12 +154,14 @@ app.post("/confirm-transaction/:id", upload.single("attachment"), (req, res) => 
     t.attachment = "/uploads/" + req.file.filename;
   }
   // Update global client score
-  scores.clients[t.clientPhone] ??= { ok: 0, ko: 0 };
-  scores.clients[t.clientPhone].ok++;
+  const clientPhone = normalizeClientPhone(t.clientPhone) || t.clientPhone;
+  t.clientPhone = clientPhone;
+  scores.clients[clientPhone] ??= { ok: 0, ko: 0 };
+  scores.clients[clientPhone].ok++;
 
   scores.vendeurs[t.sellerId] ??= { clients: {} };
-  scores.vendeurs[t.sellerId].clients[t.clientPhone] ??= { ok: 0, ko: 0 };
-  scores.vendeurs[t.sellerId].clients[t.clientPhone].ok++;
+  scores.vendeurs[t.sellerId].clients[clientPhone] ??= { ok: 0, ko: 0 };
+  scores.vendeurs[t.sellerId].clients[clientPhone].ok++;
 
   fs.writeFileSync(transactionsFile, JSON.stringify(transactions, null, 2));
   fs.writeFileSync(scoresFile, JSON.stringify(scores, null, 2));
@@ -116,12 +178,14 @@ app.post("/refuse-transaction/:id", (req, res) => {
   t.refusalDate = new Date().toISOString();
 
   // Update global client score (penalty)
-  scores.clients[t.clientPhone] ??= { ok: 0, ko: 0 };
-  scores.clients[t.clientPhone].ko++;
+  const clientPhone = normalizeClientPhone(t.clientPhone) || t.clientPhone;
+  t.clientPhone = clientPhone;
+  scores.clients[clientPhone] ??= { ok: 0, ko: 0 };
+  scores.clients[clientPhone].ko++;
 
   scores.vendeurs[t.sellerId] ??= { clients: {} };
-  scores.vendeurs[t.sellerId].clients[t.clientPhone] ??= { ok: 0, ko: 0 };
-  scores.vendeurs[t.sellerId].clients[t.clientPhone].ko++;
+  scores.vendeurs[t.sellerId].clients[clientPhone] ??= { ok: 0, ko: 0 };
+  scores.vendeurs[t.sellerId].clients[clientPhone].ko++;
 
   fs.writeFileSync(transactionsFile, JSON.stringify(transactions, null, 2));
   fs.writeFileSync(scoresFile, JSON.stringify(scores, null, 2));
