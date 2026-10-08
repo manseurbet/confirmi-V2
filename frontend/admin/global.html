@@ -55,6 +55,14 @@
                 <span class="stat-value" id="pendingTx">-</span>
                 <span class="stat-label">قيد الانتظار</span>
             </div>
+            <div class="stat-card">
+                <span class="stat-value" id="deliveredTx">-</span>
+                <span class="stat-label">تم التسليم</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="returnedTx">-</span>
+                <span class="stat-label">مرتجعة</span>
+            </div>
         </div>
 
         <div id="sellersContainer">
@@ -63,9 +71,41 @@
     </div>
 
     <script>
-        async function loadData() {
+        // Échappe le texte venant des utilisateurs avant de l'insérer dans la page
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+        }
+
+        function getAdminToken(forcePrompt) {
+            let token = forcePrompt ? null : sessionStorage.getItem('adminToken');
+            if (!token) {
+                token = prompt('رمز المشرف (ADMIN_TOKEN) :');
+                if (token) sessionStorage.setItem('adminToken', token.trim());
+            }
+            return token ? token.trim() : null;
+        }
+
+        function showAccessMessage(text) {
+            document.getElementById('sellersContainer').innerHTML =
+                '<p style="text-align:center;color:#f87171;">' + esc(text) + '</p>' +
+                '<p style="text-align:center;"><button onclick="loadData(true)" style="padding:10px 18px;border-radius:8px;border:none;background:#38bdf8;color:#0f172a;font-weight:bold;cursor:pointer;">إعادة المحاولة</button></p>';
+        }
+
+        async function loadData(forcePrompt) {
             try {
-                const res = await fetch('/admin/global-data');
+                const token = getAdminToken(forcePrompt);
+                if (!token) return showAccessMessage('رمز المشرف مطلوب.');
+
+                const res = await fetch('/admin/global-data', { headers: { 'x-admin-token': token } });
+                if (res.status === 401) {
+                    sessionStorage.removeItem('adminToken');
+                    return showAccessMessage('رمز غير صحيح.');
+                }
+                if (res.status === 429) return showAccessMessage('محاولات كثيرة، انتظر دقيقة ثم أعد المحاولة.');
+                if (res.status === 503) return showAccessMessage("ADMIN_TOKEN غير مُعرّف على الخادم (Replit > Secrets).");
+
                 const data = await res.json();
                 if (!data.success) throw new Error('Failed to load');
 
@@ -74,6 +114,8 @@
                 document.getElementById('confirmedTx').textContent = data.totalConfirmed;
                 document.getElementById('refusedTx').textContent = data.totalRefused;
                 document.getElementById('pendingTx').textContent = data.totalPending;
+                document.getElementById('deliveredTx').textContent = data.totalDelivered;
+                document.getElementById('returnedTx').textContent = data.totalReturned;
 
                 const container = document.getElementById('sellersContainer');
                 container.innerHTML = '';
@@ -85,7 +127,7 @@
                     section.innerHTML = `
                         <div class="seller-header" onclick="toggleSeller(this)">
                             <div class="seller-info">
-                                <span class="seller-id">👤 بائع: ${sellerId}</span>
+                                <span class="seller-id">👤 بائع: ${esc(sellerId)}</span>
                                 <span class="stat-label">(${seller.transactions.length} معاملة)</span>
                             </div>
                             <span style="color:#94a3b8">🔽 تفاصيل</span>
@@ -104,11 +146,11 @@
                                 <tbody>
                                     ${seller.transactions.map(t => `
                                         <tr>
-                                            <td>${t.clientName}<br><small style="color:#94a3b8">${t.clientPhone}</small></td>
-                                            <td>${t.productRef}</td>
-                                            <td>${t.amount} دج</td>
-                                            <td><span class="badge ${t.confirmed ? 'badge-confirmed' : t.refused ? 'badge-refused' : 'badge-pending'}">${t.confirmed ? '✅ مؤكدة' : t.refused ? '❌ مرفوضة' : '⏳ معلقة'}</span></td>
-                                            <td>${new Date(parseInt(t.transactionId)).toLocaleDateString('fr-FR')}</td>
+                                            <td>${esc(t.clientName)}<br><small style="color:#94a3b8">${esc(t.clientPhone)}</small></td>
+                                            <td>${esc(t.productRef)}</td>
+                                            <td>${esc(t.amount)} دج</td>
+                                            <td><span class="badge ${t.confirmed ? 'badge-confirmed' : t.refused ? 'badge-refused' : 'badge-pending'}">${t.confirmed ? '✅ مؤكدة' : t.refused ? '❌ مرفوضة' : '⏳ معلقة'}</span>${t.outcome ? '<br><small>' + (t.outcome.status === 'delivered' ? '📦 تم التسليم' : '↩️ مرتجع') + '</small>' : ''}</td>
+                                            <td>${new Date(t.createdAt || parseInt(t.transactionId)).toLocaleDateString('fr-FR')}</td>
                                         </tr>
                                     `).join('')}
                                 </tbody>
