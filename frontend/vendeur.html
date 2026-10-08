@@ -34,6 +34,8 @@ button:hover{opacity:0.9;}
     <div class="score-card">
       <div class="score-label">⭐ تقييم موثوقية الزبون:</div>
       <div id="scoreDisplay"><span class="score-value" id="scoreNum">--</span> <span id="badgeText"></span></div>
+      <div id="scoreCounts" style="font-size:13px;color:#94a3b8;margin-top:6px;"></div>
+      <div id="scoreHint" style="font-size:12px;color:#64748b;margin-top:4px;"></div>
     </div>
     <form id="orderForm">
       <input type="hidden" id="sellerId">
@@ -69,7 +71,12 @@ button:hover{opacity:0.9;}
   </div>
 </div>
 <script>
-const sellerId = localStorage.getItem('sellerId') || 'seller_' + Math.random().toString(36).substr(2, 9);
+function newSellerId() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return 'seller_' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+const sellerId = localStorage.getItem('sellerId') || newSellerId();
 localStorage.setItem('sellerId', sellerId);
 document.getElementById('sellerId').value = sellerId;
 
@@ -77,9 +84,46 @@ let generatedLink = '';
 let clientPhoneNumber = '';
 
 const phoneInput = document.getElementById('clientPhone');
-phoneInput.addEventListener('input', async () => {
-  document.getElementById('scoreNum').innerText = '--';
+
+const SCORE_COLORS = {
+  trusted: '#22c55e',
+  average: '#f59e0b',
+  risky:   '#ef4444',
+  few:     '#94a3b8',
+  new:     '#94a3b8'
+};
+
+function resetScoreDisplay() {
+  const num = document.getElementById('scoreNum');
+  num.innerText = '--';
+  num.style.color = SCORE_COLORS.new;
   document.getElementById('badgeText').innerText = '';
+  document.getElementById('scoreCounts').innerText = '';
+  document.getElementById('scoreHint').innerText = '';
+}
+
+function showScore(data) {
+  const num = document.getElementById('scoreNum');
+  // Pas de pourcentage tant qu'il n'y a pas assez d'historique (jamais "0%" par défaut)
+  num.innerText = data.score === null || data.score === undefined ? '' : data.score + '%';
+  num.style.color = SCORE_COLORS[data.status] || SCORE_COLORS.new;
+  document.getElementById('badgeText').innerText = data.badge;
+
+  document.getElementById('scoreCounts').innerText =
+    data.total > 0 ? '📦 ' + data.ok + ' تم التسليم   ↩️ ' + data.ko + ' مرتجع' : '';
+
+  const hint = document.getElementById('scoreHint');
+  if (data.status === 'new') {
+    hint.innerText = 'زبون جديد: لا توجد نتائج تسليم مسجّلة لهذا الرقم (هذا ليس مؤشراً سلبياً).';
+  } else if (data.status === 'few') {
+    hint.innerText = 'عدد التسليمات المسجّلة قليل: لا يكفي لحساب نسبة موثوقة بعد.';
+  } else {
+    hint.innerText = '';
+  }
+}
+
+phoneInput.addEventListener('input', async () => {
+  resetScoreDisplay();
   document.getElementById('phoneError').innerText = '';
   const phone = phoneInput.value.trim();
   if (phone.length < 10) return;
@@ -92,8 +136,7 @@ phoneInput.addEventListener('input', async () => {
       document.getElementById('phoneError').innerText = data.message || 'رقم الهاتف غير صالح';
       return;
     }
-    document.getElementById('scoreNum').innerText = data.score + '%';
-    document.getElementById('badgeText').innerText = data.badge;
+    showScore(data);
   } catch {
     if (phoneInput.value.trim() === phone) {
       document.getElementById('phoneError').innerText = 'تعذر التحقق من رقم الهاتف';
@@ -113,8 +156,14 @@ document.getElementById('orderForm').onsubmit = async (e) => {
   const photo = document.getElementById('productPhoto').files[0];
   if (photo) formData.append('productPhoto', photo);
 
-  const res = await fetch('/create-confirmation', { method: 'POST', body: formData });
-  const data = await res.json();
+  let data;
+  try {
+    const res = await fetch('/create-confirmation', { method: 'POST', body: formData });
+    data = await res.json();
+  } catch {
+    document.getElementById('phoneError').innerText = 'تعذر الاتصال بالخادم';
+    return;
+  }
   if (data.success) {
     generatedLink = data.clientLink;
     clientPhoneNumber = data.clientPhone;

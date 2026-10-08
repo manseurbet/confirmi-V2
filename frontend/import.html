@@ -7,26 +7,44 @@
 <style>
 body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;}
 .container{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px;}
-.box{max-width:700px;width:100%;background:#0b1220;border-radius:16px;padding:28px 24px;box-shadow:0 20px 60px rgba(0,0,0,0.4);margin-bottom:20px;}
+.box{max-width:700px;width:100%;background:#0b1220;border-radius:16px;padding:28px 24px;box-shadow:0 20px 60px rgba(0,0,0,0.4);margin-bottom:20px;box-sizing:border-box;}
 h2{text-align:center;color:#22c55e;margin-top:0;}
 .btn-home{background:#334155;color:white;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-size:14px;margin-bottom:20px;}
 textarea{width:100%;height:160px;background:#0f172a;border:1px solid #334155;border-radius:10px;color:#fff;padding:12px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:monospace;}
-.hint{font-size:12px;color:#64748b;margin:6px 0 16px;}
-.columns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+.hint{font-size:12px;color:#64748b;margin:6px 0 4px;}
+.columns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 16px;}
 select{width:100%;padding:9px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#fff;font-size:13px;}
 label{font-size:13px;color:#94a3b8;display:block;margin-bottom:4px;}
-.btn-parse{width:100%;padding:13px;background:#22c55e;color:#022c22;border:none;border-radius:10px;font-size:15px;font-weight:bold;cursor:pointer;}
+.summary{font-size:14px;line-height:1.9;margin-bottom:6px;}
+.summary .good{color:#86efac;font-weight:bold;}
+.summary .bad{color:#fca5a5;font-weight:bold;}
+.summary .note{color:#94a3b8;font-size:12px;}
+.btn-link{background:none;border:none;color:#38bdf8;cursor:pointer;font-size:13px;padding:6px 0;}
+.warnbox{background:#422006;color:#fde68a;border-radius:8px;padding:10px 12px;font-size:13px;margin:8px 0;}
+.fatal{background:#7f1d1d;color:#fecaca;border-radius:8px;padding:10px 12px;font-size:13px;margin:12px 0;display:none;}
 .preview-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px;}
 .preview-table th{background:#1e293b;padding:8px;text-align:right;border-bottom:1px solid #334155;}
 .preview-table td{padding:8px;border-bottom:1px solid #1e293b;vertical-align:middle;}
 .preview-table tr:hover td{background:#0f172a;}
-.status-badge{font-size:11px;padding:3px 8px;border-radius:20px;}
+.preview-table tr.row-invalid td{background:#2a1215;}
+.problems{font-size:11px;color:#fca5a5;margin-top:4px;}
+.status-badge{font-size:11px;padding:3px 8px;border-radius:20px;white-space:nowrap;}
 .badge-pending{background:#1e293b;color:#94a3b8;}
+.badge-ready{background:#0c4a6e;color:#7dd3fc;}
 .badge-ok{background:#166534;color:#86efac;}
 .badge-err{background:#7c2d12;color:#fca5a5;}
+.badge-warn{background:#713f12;color:#fde68a;}
 .btn-send-all{width:100%;padding:13px;background:#25d366;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:bold;cursor:pointer;margin-top:14px;}
+.btn-send-all:disabled{opacity:.45;cursor:default;}
 .btn-row-wa{background:#25d366;color:#fff;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;margin-left:4px;}
 .btn-row-sms{background:#0ea5e9;color:#fff;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;}
+.dupbox{font-size:13px;color:#fde68a;margin:10px 0 0;}
+.note-cell{white-space:nowrap;font-size:12px;}
+.note-counts{font-size:11px;color:#64748b;margin-top:2px;}
+.note-trusted{color:#86efac;}
+.note-average{color:#fcd34d;}
+.note-risky{color:#fca5a5;font-weight:bold;}
+.note-new,.note-few,.muted{color:#94a3b8;}
 #progressBar{width:100%;height:6px;background:#1e293b;border-radius:4px;margin:10px 0;display:none;}
 #progressFill{height:6px;background:#22c55e;border-radius:4px;width:0%;transition:width 0.3s;}
 </style>
@@ -39,162 +57,402 @@ label{font-size:13px;color:#94a3b8;display:block;margin-bottom:4px;}
     <h2>📋 إرسال جماعي من Google Sheets</h2>
 
     <p style="color:#94a3b8;font-size:13px;text-align:center;margin-top:0;">
-      انسخ الأعمدة من Google Sheets والصقها هنا مباشرة
+      انسخ الأعمدة من Google Sheets أو Excel والصقها هنا، والأعمدة يتم التعرف عليها تلقائياً
     </p>
 
-    <textarea id="pasteArea" placeholder="الصق البيانات هنا...&#10;مثال:&#10;أحمد بن علي	0556001122	هاتف Samsung	12000	توصيل سريع&#10;فاطمة حميدة	0661223344	حذاء Nike	5500	"></textarea>
-    <div class="hint">📌 كل سطر = زبون واحد | الأعمدة مفصولة بـ Tab (نسخ مباشر من Google Sheets)</div>
-
-    <div class="columns">
-      <div>
-        <label>العمود 1</label>
-        <select id="col0"><option value="clientName">👤 اسم الزبون</option><option value="clientPhone">📞 الهاتف</option><option value="productRef">🔖 المنتج</option><option value="amount">💰 السعر</option><option value="description">📝 الوصف</option><option value="ignore">— تجاهل —</option></select>
-      </div>
-      <div>
-        <label>العمود 2</label>
-        <select id="col1"><option value="clientPhone">📞 الهاتف</option><option value="clientName">👤 اسم الزبون</option><option value="productRef">🔖 المنتج</option><option value="amount">💰 السعر</option><option value="description">📝 الوصف</option><option value="ignore">— تجاهل —</option></select>
-      </div>
-      <div>
-        <label>العمود 3</label>
-        <select id="col2"><option value="productRef">🔖 المنتج</option><option value="clientName">👤 اسم الزبون</option><option value="clientPhone">📞 الهاتف</option><option value="amount">💰 السعر</option><option value="description">📝 الوصف</option><option value="ignore">— تجاهل —</option></select>
-      </div>
-      <div>
-        <label>العمود 4</label>
-        <select id="col3"><option value="amount">💰 السعر</option><option value="clientName">👤 اسم الزبون</option><option value="clientPhone">📞 الهاتف</option><option value="productRef">🔖 المنتج</option><option value="description">📝 الوصف</option><option value="ignore">— تجاهل —</option></select>
-      </div>
-      <div>
-        <label>العمود 5</label>
-        <select id="col4"><option value="description">📝 الوصف</option><option value="clientName">👤 اسم الزبون</option><option value="clientPhone">📞 الهاتف</option><option value="productRef">🔖 المنتج</option><option value="amount">💰 السعر</option><option value="ignore">— تجاهل —</option></select>
-      </div>
-    </div>
-
-    <button class="btn-parse" onclick="parseData()">🔍 Aperçu des données</button>
+    <textarea id="pasteArea" placeholder="الصق البيانات هنا...&#10;مثال:&#10;أحمد بن علي&#9;0556001122&#9;هاتف Samsung&#9;12000&#10;فاطمة حميدة&#9;0661223344&#9;حذاء Nike&#9;5500"></textarea>
+    <div class="hint">📌 كل سطر = زبون واحد | مع عناوين الأعمدة أو بدونها | الأرقام بأي صيغة (0556…، +213…، 556…)</div>
+    <div class="fatal" id="fatalBox"></div>
   </div>
 
   <div class="box" id="resultsBox" style="display:none;">
-    <h2 style="color:#38bdf8;">📦 Commandes détectées</h2>
+    <h2 style="color:#38bdf8;">📦 الطلبات المكتشفة</h2>
+
+    <div class="summary" id="summary"></div>
+    <div id="warnings"></div>
+
+    <button class="btn-link" id="toggleEditor" type="button"></button>
+    <div class="columns" id="columnsEditor" style="display:none;"></div>
+
+    <div class="dupbox" id="dupBox" style="display:none;">
+      <label style="display:flex;gap:8px;align-items:center;color:#fde68a;margin:0;">
+        <input type="checkbox" id="includeDup">
+        تضمين الطلبات المكررة (أُنشئت خلال آخر 48 ساعة)
+      </label>
+    </div>
+
     <div id="progressBar"><div id="progressFill"></div></div>
     <div id="tableContainer"></div>
-    <button class="btn-send-all" onclick="createAll()">⚡ Créer et envoyer toutes les confirmations</button>
+    <button class="btn-send-all" id="sendAllBtn" type="button"></button>
   </div>
 
 </div>
+
+<script src="detect-orders.js"></script>
 <script>
-const sellerId = localStorage.getItem('sellerId') || 'seller_' + Math.random().toString(36).substr(2, 9);
+function newSellerId() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return 'seller_' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+const sellerId = localStorage.getItem('sellerId') || newSellerId();
 localStorage.setItem('sellerId', sellerId);
 
-let rows = [];
-let createdLinks = [];
+/* ------------------------------------------------------------------ */
+/* Données                                                             */
+/* ------------------------------------------------------------------ */
 
-function getColMapping() {
-  const mapping = [];
-  for (let i = 0; i < 5; i++) {
-    const el = document.getElementById('col' + i);
-    if (el) mapping.push(el ? el.value : 'ignore');
+const FIELDS = [
+  { key: 'name',        label: '👤 اسم الزبون' },
+  { key: 'phone',       label: '📞 الهاتف' },
+  { key: 'product',     label: '🔖 المنتج' },
+  { key: 'price',       label: '💰 السعر' },
+  { key: 'description', label: '📝 الوصف' }
+];
+
+const PROBLEM_TEXT = {
+  phone_empty:          'رقم الهاتف فارغ',
+  phone_has_letters:    'الهاتف يحتوي على حروف',
+  phone_landline:       'رقم ثابت (لا يصلح للواتساب)',
+  phone_too_short:      'رقم الهاتف قصير',
+  phone_too_long:       'رقم الهاتف طويل',
+  phone_invalid_prefix: 'الرقم غير جزائري (يجب أن يبدأ بـ 05 أو 06 أو 07)',
+  phone_column_missing: 'لم يتم تحديد عمود الهاتف',
+  duplicate_in_paste:   'مكرر في هذه القائمة',
+  missing_name:         'الاسم ناقص',
+  missing_product:      'المنتج ناقص',
+  missing_price:        'السعر ناقص',
+  price_unreadable:     'السعر غير مقروء'
+};
+
+const GLOBAL_WARNING_TEXT = {
+  no_phone_column:          'لم أجد عمود الهاتف. اختر العمود الصحيح من «تعديل الأعمدة».',
+  several_numeric_columns:  'وجدت عدة أعمدة رقمية: تحقق أن عمود السعر هو الصحيح.'
+};
+
+let rows = [];             // commandes analysées (avec statut)
+let analysis = null;       // résultat brut de DetectOrders
+let overrides = {};        // colonnes corrigées à la main (champ -> index | null)
+let nCols = 0;
+let sampleRow = [];
+let editorOpen = false;
+let sending = false;
+let notes = {};              // téléphone (05…) -> note du client renvoyée par le serveur
+let notesFailed = false;
+const notesInflight = new Set();
+
+/* ------------------------------------------------------------------ */
+/* Aides                                                               */
+/* ------------------------------------------------------------------ */
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+// Anti-doublon : on mémorise 48 h les commandes déjà créées depuis cet appareil
+const IMPORTED_KEY = 'importedOrderKeys';
+const DUP_WINDOW_MS = 48 * 60 * 60 * 1000;
+
+function loadImported() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(IMPORTED_KEY) || '{}');
+    const now = Date.now();
+    for (const k in stored) if (now - stored[k] > DUP_WINDOW_MS) delete stored[k];
+    return stored;
+  } catch { return {}; }
+}
+
+function markImported(key) {
+  try {
+    const stored = loadImported();
+    stored[key] = Date.now();
+    localStorage.setItem(IMPORTED_KEY, JSON.stringify(stored));
+  } catch { /* stockage indisponible : on continue sans anti-doublon */ }
+}
+
+/* ------------------------------------------------------------------ */
+/* Analyse                                                             */
+/* ------------------------------------------------------------------ */
+
+// Le serveur exige nom, produit et prix : on signale ici ce qui manque
+function extraProblems(o) {
+  const p = [];
+  if (!o.name) p.push('missing_name');
+  if (!o.product) p.push('missing_product');
+  if (o.price === null) p.push(o.warnings.indexOf('price_unreadable') !== -1 ? 'price_unreadable' : 'missing_price');
+  return p;
+}
+
+function analyze(text, ov) {
+  const res = DetectOrders.detectOrders(text, ov);
+  const imported = loadImported();
+  const list = res.orders.map(o => {
+    const problems = o.errors.concat(o.valid ? extraProblems(o) : []);
+    const status = problems.length ? 'invalid' : 'ready';
+    const dup = status === 'ready' && !!imported[DetectOrders.makeOrderKey(o)];
+    return Object.assign({}, o, { problems, status, dup, link: '', waPhone: '', serverMessage: '' });
+  });
+  return { res, rows: list };
+}
+
+function refresh(isNewText) {
+  const text = document.getElementById('pasteArea').value;
+  const fatal = document.getElementById('fatalBox');
+  const resultsBox = document.getElementById('resultsBox');
+
+  if (typeof DetectOrders === 'undefined') {
+    fatal.style.display = 'block';
+    fatal.textContent = 'الملف detect-orders.js غير موجود في مجلد frontend، ضعه بجانب هذه الصفحة.';
+    return;
   }
-  return mapping;
+  fatal.style.display = 'none';
+
+  if (isNewText) { overrides = {}; notes = {}; }
+  if (!text.trim()) {
+    rows = []; analysis = null;
+    resultsBox.style.display = 'none';
+    return;
+  }
+
+  const out = analyze(text, overrides);
+  analysis = out.res;
+  rows = out.rows;
+
+  const parsed = DetectOrders.parsePaste(text);
+  nCols = parsed.rows.reduce((m, r) => Math.max(m, r.cells.length), 0);
+  const sample = parsed.rows[analysis.hasHeader ? 1 : 0] || parsed.rows[0];
+  sampleRow = sample ? sample.cells : [];
+
+  if (isNewText) editorOpen = analysis.needsReview;
+  resultsBox.style.display = 'block';
+  render();
+  loadNotes();
 }
 
-function parseData() {
-  const raw = document.getElementById('pasteArea').value.trim();
-  if (!raw) return alert('الرجاء لصق البيانات أولاً');
-
-  const mapping = getColMapping();
-  rows = [];
-
-  raw.split('\n').forEach((line, idx) => {
-    if (!line.trim()) return;
-    const cols = line.split('\t');
-    const entry = { clientName:'', clientPhone:'', productRef:'', amount:'', description:'' };
-    cols.forEach((val, i) => {
-      const field = mapping[i];
-      if (field && field !== 'ignore' && entry.hasOwnProperty(field)) {
-        entry[field] = val.trim();
-      }
-    });
-    if (entry.clientPhone || entry.clientName) rows.push({ ...entry, status: 'pending', link: '' });
+// Récupère la note de chaque client de la liste en UNE requête (200 numéros max par lot)
+async function loadNotes() {
+  const phones = [];
+  rows.forEach(r => {
+    if (r.status !== 'invalid' && r.phone && !notes[r.phone] &&
+        !notesInflight.has(r.phone) && phones.indexOf(r.phone) === -1) phones.push(r.phone);
   });
+  if (!phones.length) return;
 
-  if (rows.length === 0) return alert('لم يتم العثور على بيانات صحيحة');
-
-  renderTable();
-  document.getElementById('resultsBox').style.display = 'block';
-  document.getElementById('resultsBox').scrollIntoView({ behavior: 'smooth' });
-}
-
-function renderTable() {
-  const container = document.getElementById('tableContainer');
-  let html = `<table class="preview-table">
-    <thead><tr>
-      <th>#</th><th>الاسم</th><th>الهاتف</th><th>المنتج</th><th>السعر</th><th>الحالة</th><th>إرسال</th>
-    </tr></thead><tbody>`;
-
-  rows.forEach((r, i) => {
-    let badgeClass = 'badge-pending';
-    let badgeText = 'بانتظار';
-    if (r.status === 'ok') { badgeClass = 'badge-ok'; badgeText = '✅ تم'; }
-    if (r.status === 'err') { badgeClass = 'badge-err'; badgeText = '❌ خطأ'; }
-
-    let sendBtns = '';
-    if (r.status === 'ok' && r.link) {
-      const phone = r.clientPhone;
-      const msg = encodeURIComponent('مرحبا، يرجى تأكيد طلبك:\n' + r.link);
-      const smsMsg = encodeURIComponent('تأكيد الطلب: ' + r.link);
-      sendBtns = `<button class="btn-row-wa" onclick="window.open('https://wa.me/${phone}?text=${msg}','_blank')">💬 WA</button>
-                  <button class="btn-row-sms" onclick="window.location.href='sms:${phone}?body=${smsMsg}'">📱 SMS</button>`;
+  phones.forEach(p => notesInflight.add(p));
+  notesFailed = false;
+  try {
+    for (let i = 0; i < phones.length; i += 200) {
+      const chunk = phones.slice(i, i + 200);
+      const res = await fetch('/score/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phones: chunk })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error('notes');
+      data.results.forEach((n, k) => { if (n.valid) notes[chunk[k]] = n; });
+      render();
     }
-
-    html += `<tr>
-      <td>${i+1}</td>
-      <td>${r.clientName}</td>
-      <td>${r.clientPhone}</td>
-      <td>${r.productRef}</td>
-      <td>${r.amount} دج</td>
-      <td><span class="status-badge ${badgeClass}">${badgeText}</span></td>
-      <td>${sendBtns}</td>
-    </tr>`;
-  });
-
-  html += '</tbody></table>';
-  container.innerHTML = html;
+  } catch (e) {
+    notesFailed = true;   // l'envoi reste possible sans les notes
+  } finally {
+    phones.forEach(p => notesInflight.delete(p));
+    render();
+  }
 }
+
+/* ------------------------------------------------------------------ */
+/* Affichage                                                           */
+/* ------------------------------------------------------------------ */
+
+function editorHtml() {
+  function options(selected) {
+    let html = '<option value=""' + (selected === null ? ' selected' : '') + '>— لا شيء —</option>';
+    for (let i = 0; i < nCols; i++) {
+      const sample = String(sampleRow[i] ?? '').slice(0, 14);
+      html += '<option value="' + i + '"' + (selected === i ? ' selected' : '') + '>العمود ' + (i + 1) +
+              (sample ? ' — ' + esc(sample) : '') + '</option>';
+    }
+    return html;
+  }
+  return FIELDS.map(f =>
+    '<div><label>' + f.label + '</label><select data-field="' + f.key + '">' +
+    options(analysis.mapping[f.key] === undefined ? null : analysis.mapping[f.key]) +
+    '</select></div>'
+  ).join('');
+}
+
+function sendableRows() {
+  const includeDup = document.getElementById('includeDup').checked;
+  return rows.filter(r => (r.status === 'ready' || r.status === 'err') && (!r.dup || includeDup));
+}
+
+function statusCell(r) {
+  if (r.status === 'ok')  return '<span class="status-badge badge-ok">✅ تم</span>';
+  if (r.status === 'err') return '<span class="status-badge badge-err">❌ فشل</span>' +
+                                 (r.serverMessage ? '<div class="problems">' + esc(r.serverMessage) + '</div>' : '');
+  if (r.status === 'invalid') {
+    return '<span class="status-badge badge-err">❌ مشكلة</span><div class="problems">' +
+           r.problems.map(p => esc(PROBLEM_TEXT[p] || p)).join(' • ') + '</div>';
+  }
+  if (r.dup) return '<span class="status-badge badge-warn">⚠️ أُنشئ مؤخراً</span>';
+  return '<span class="status-badge badge-ready">جاهز</span>';
+}
+
+function sendCell(r) {
+  if (r.status !== 'ok' || !r.link) return '';
+  const msg = encodeURIComponent('مرحبا، يرجى تأكيد طلبك:\n' + r.link);
+  const smsMsg = encodeURIComponent('تأكيد الطلب: ' + r.link);
+  return '<button class="btn-row-wa" type="button" data-wa="' + esc(r.waPhone) + '" data-text="' + esc(msg) + '">💬 WA</button>' +
+         '<button class="btn-row-sms" type="button" data-sms="' + esc(r.waPhone) + '" data-text="' + esc(smsMsg) + '">📱 SMS</button>';
+}
+
+function noteCell(r) {
+  if (r.status === 'invalid' || !r.phone) return '';
+  const n = notes[r.phone];
+  if (!n) return notesFailed ? '<span class="muted">—</span>' : '<span class="muted">…</span>';
+  const pct = n.score === null ? '' : ' ' + esc(n.score) + '%';
+  const counts = n.total > 0 ? '<div class="note-counts">📦 ' + esc(n.ok) + ' · ↩️ ' + esc(n.ko) + '</div>' : '';
+  return '<span class="note-' + esc(n.status) + '">' + esc(n.badge) + pct + '</span>' + counts;
+}
+
+function tableHtml() {
+  let html = '<table class="preview-table"><thead><tr>' +
+    '<th>#</th><th>الاسم</th><th>الهاتف</th><th>التقييم</th><th>المنتج</th><th>السعر</th><th>الحالة</th><th>إرسال</th>' +
+    '</tr></thead><tbody>';
+  rows.forEach(r => {
+    html += '<tr class="' + (r.status === 'invalid' ? 'row-invalid' : '') + '">' +
+      '<td>' + esc(r.line) + '</td>' +
+      '<td>' + esc(r.name) + '</td>' +
+      '<td><bdi>' + esc(r.phone || r.rawPhone) + '</bdi></td>' +
+      '<td class="note-cell">' + noteCell(r) + '</td>' +
+      '<td>' + esc(r.product) + '</td>' +
+      '<td>' + (r.price === null ? '' : esc(r.price) + ' دج') + '</td>' +
+      '<td>' + statusCell(r) + '</td>' +
+      '<td>' + sendCell(r) + '</td>' +
+    '</tr>';
+  });
+  return html + '</tbody></table>';
+}
+
+function render() {
+  if (!analysis) return;
+  const valid = rows.filter(r => r.status !== 'invalid').length;
+  const invalid = rows.length - valid;
+
+  let summary = '<span class="good">✅ ' + valid + ' طلب جاهز</span>';
+  if (invalid) summary += ' &nbsp; <span class="bad">⚠️ ' + invalid + ' فيه مشكلة</span>';
+  const risky = rows.filter(r => r.status !== 'invalid' && notes[r.phone] && notes[r.phone].status === 'risky').length;
+  if (risky) summary += '<div class="bad">🔴 ' + risky + ' زبون غير موثوق في هذه القائمة، تحقق منهم قبل الإرسال.</div>';
+  if (notesFailed) summary += '<div class="note">تعذر جلب تقييم الزبائن، يمكنك الإرسال رغم ذلك.</div>';
+  if (analysis.hasHeader) summary += '<div class="note">تم تجاهل السطر الأول لأنه عناوين الأعمدة.</div>';
+  document.getElementById('summary').innerHTML = summary;
+
+  const warn = analysis.warnings.map(w => GLOBAL_WARNING_TEXT[w]).filter(Boolean);
+  document.getElementById('warnings').innerHTML = warn.map(w => '<div class="warnbox">' + esc(w) + '</div>').join('');
+
+  const toggle = document.getElementById('toggleEditor');
+  toggle.textContent = editorOpen ? '▲ إخفاء تعديل الأعمدة' : '✏️ تعديل الأعمدة';
+  const editor = document.getElementById('columnsEditor');
+  editor.style.display = editorOpen ? 'grid' : 'none';
+  if (editorOpen) editor.innerHTML = editorHtml();
+
+  document.getElementById('dupBox').style.display = rows.some(r => r.dup) ? 'block' : 'none';
+  document.getElementById('tableContainer').innerHTML = tableHtml();
+
+  const n = sendableRows().length;
+  const btn = document.getElementById('sendAllBtn');
+  btn.textContent = sending ? '⏳ جاري الإرسال...' : '⚡ إنشاء وإرسال ' + n + ' تأكيد';
+  btn.disabled = sending || n === 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Envoi                                                               */
+/* ------------------------------------------------------------------ */
 
 async function createAll() {
+  if (sending) return;
+  const queue = sendableRows();
+  if (!queue.length) return;
+
+  sending = true;
   const bar = document.getElementById('progressBar');
   const fill = document.getElementById('progressFill');
   bar.style.display = 'block';
+  fill.style.width = '0%';
+  render();
 
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    if (r.status === 'ok') continue;
-
+  let done = 0;
+  for (const r of queue) {
     try {
       const fd = new FormData();
       fd.append('sellerId', sellerId);
-      fd.append('clientName', r.clientName);
-      fd.append('clientPhone', r.clientPhone);
-      fd.append('productRef', r.productRef);
-      fd.append('amount', r.amount);
+      fd.append('clientName', r.name);
+      fd.append('clientPhone', r.phone);          // numéro déjà normalisé (05/06/07…)
+      fd.append('productRef', r.product);
+      fd.append('amount', String(r.price));
       fd.append('description', r.description);
 
       const res = await fetch('/create-confirmation', { method: 'POST', body: fd });
       const data = await res.json();
 
       if (data.success) {
-        rows[i].status = 'ok';
-        rows[i].link = data.clientLink;
-        rows[i].clientPhone = data.clientPhone || rows[i].clientPhone;
+        r.status = 'ok';
+        r.link = data.clientLink;
+        r.waPhone = data.clientPhone || ('213' + r.phone.slice(1));
+        r.dup = false;
+        r.serverMessage = '';
+        markImported(DetectOrders.makeOrderKey(r));
       } else {
-        rows[i].status = 'err';
+        r.status = 'err';
+        r.serverMessage = data.message || '';
       }
-    } catch(e) {
-      rows[i].status = 'err';
+    } catch (e) {
+      r.status = 'err';
+      r.serverMessage = 'تعذر الاتصال بالخادم';
     }
-
-    fill.style.width = Math.round(((i+1)/rows.length)*100) + '%';
-    renderTable();
+    done++;
+    fill.style.width = Math.round((done / queue.length) * 100) + '%';
+    render();
   }
+
+  sending = false;
+  render();
 }
+
+/* ------------------------------------------------------------------ */
+/* Événements                                                          */
+/* ------------------------------------------------------------------ */
+
+let debounce = null;
+document.getElementById('pasteArea').addEventListener('input', () => {
+  clearTimeout(debounce);
+  debounce = setTimeout(() => refresh(true), 250);
+});
+
+document.getElementById('toggleEditor').addEventListener('click', () => {
+  editorOpen = !editorOpen;
+  render();
+});
+
+document.getElementById('columnsEditor').addEventListener('change', (e) => {
+  const select = e.target.closest('select[data-field]');
+  if (!select) return;
+  overrides[select.dataset.field] = select.value === '' ? null : Number(select.value);
+  refresh(false);
+});
+
+document.getElementById('includeDup').addEventListener('change', render);
+document.getElementById('sendAllBtn').addEventListener('click', createAll);
+
+document.getElementById('tableContainer').addEventListener('click', (e) => {
+  const wa = e.target.closest('button[data-wa]');
+  if (wa) { window.open('https://wa.me/' + wa.dataset.wa + '?text=' + wa.dataset.text, '_blank'); return; }
+  const sms = e.target.closest('button[data-sms]');
+  if (sms) { window.location.href = 'sms:+' + sms.dataset.sms + '?body=' + sms.dataset.text; }
+});
 </script>
 </body>
 </html>

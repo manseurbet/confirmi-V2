@@ -27,12 +27,15 @@
         <div class="stats">
             <div class="stat"><div>إجمالي الطلبات</div><strong id="totalCmd">0</strong></div>
             <div class="stat"><div>المؤكدة</div><strong id="confirmedCmd">0</strong></div>
+            <div class="stat"><div>تم التسليم</div><strong id="deliveredCmd">0</strong></div>
+            <div class="stat"><div>مرتجعة</div><strong id="returnedCmd">0</strong></div>
+            <div class="stat"><div>بانتظار النتيجة</div><strong id="awaitingCmd">0</strong></div>
         </div>
     </div>
     <div class="section">
         <h2>👥 الزبائن</h2>
         <table id="clientsTable">
-            <thead><tr><th>الهاتف</th><th>تأكيدات</th><th>التقييم</th></tr></thead>
+            <thead><tr><th>الهاتف</th><th>تم التسليم</th><th>مرتجع</th><th>التقييم</th></tr></thead>
             <tbody></tbody>
         </table>
     </div>
@@ -45,11 +48,16 @@ async function loadDashboard(){
     const data = await res.json();
     document.getElementById("totalCmd").innerText = data.stats.total;
     document.getElementById("confirmedCmd").innerText = data.stats.confirmed;
+    document.getElementById("deliveredCmd").innerText = data.stats.delivered;
+    document.getElementById("returnedCmd").innerText = data.stats.returned;
+    document.getElementById("awaitingCmd").innerText = data.stats.awaiting;
     const cBody = document.querySelector("#clientsTable tbody");
     cBody.innerHTML = "";
+    const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    const localPhone = p => /^213\d{9}$/.test(String(p)) ? '0' + String(p).slice(3) : String(p);
     for(const phone in data.clients){
         const c = data.clients[phone];
-        cBody.innerHTML += `<tr><td>${phone}</td><td>${c.confirmed}</td><td>${c.score}% ${c.badge}</td></tr>`;
+        cBody.innerHTML += `<tr><td><bdi>${esc(localPhone(phone))}</bdi></td><td>${esc(c.delivered)}</td><td>${esc(c.returned)}</td><td>${c.score === null ? '' : esc(c.score) + '%'} ${esc(c.badge)}</td></tr>`;
     }
 }
 loadDashboard();

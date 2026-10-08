@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmi – قائمة الاتصال</title>
+    <style>
+        body{ margin:0; font-family:Arial, sans-serif; background:#0f172a; color:#fff; padding:20px; text-align:right; }
+        .container{ max-width:800px; margin:0 auto; }
+        h1{ text-align:center; color:#38bdf8; margin-bottom:6px; }
+        .sub{ text-align:center; color:#94a3b8; font-size:13px; margin:0 0 18px; line-height:1.7; }
+        .btn-home{ background:#334155; color:white; margin-bottom:20px; padding:10px; border-radius:8px; border:none; cursor:pointer; }
+        .controls{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+        .filter{ background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 14px; border-radius:20px; cursor:pointer; font-size:14px; }
+        .filter.active{ background:#38bdf8; color:#0f172a; border-color:#38bdf8; font-weight:bold; }
+        .hours{ margin-right:auto; font-size:13px; color:#94a3b8; display:flex; align-items:center; gap:8px; }
+        .hours select{ padding:8px; border-radius:8px; border:1px solid #334155; background:#1e293b; color:#fff; font-size:13px; }
+        .card{ background:#1e293b; padding:15px; border-radius:10px; margin-bottom:15px; border-right:5px solid #334155; }
+        .card.risky{ border-right-color:#ef4444; }
+        .card.noresp{ border-right-color:#f59e0b; }
+        .card.both{ border-right-color:#ef4444; }
+        .name{ font-size:17px; font-weight:bold; }
+        .details{ font-size:14px; color:#94a3b8; line-height:1.8; margin-top:4px; }
+        .tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+        .tag{ font-size:12px; padding:3px 10px; border-radius:20px; }
+        .tag-noresp{ background:#713f12; color:#fde68a; }
+        .tag-risky{ background:#7f1d1d; color:#fecaca; }
+        .tag-info{ background:#0c4a6e; color:#7dd3fc; }
+        .actions{ display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
+        .btn{ flex:1; min-width:120px; padding:12px; border:none; border-radius:8px; font-size:15px; font-weight:bold; cursor:pointer; text-align:center; text-decoration:none; box-sizing:border-box; }
+        .btn-call{ background:#22c55e; color:#022c22; }
+        .btn-wa{ background:#25d366; color:#fff; }
+        .results{ margin-top:12px; padding-top:12px; border-top:1px solid #334155; }
+        .results-title{ font-size:13px; color:#94a3b8; margin-bottom:8px; }
+        .chips{ display:flex; gap:8px; flex-wrap:wrap; }
+        .chip{ flex:1; min-width:90px; padding:10px 6px; border:1px solid #334155; background:#0f172a; color:#fff; border-radius:8px; font-size:13px; cursor:pointer; }
+        .chip:disabled{ opacity:.5; cursor:default; }
+        .chip-ok{ border-color:#22c55e; }
+        .chip-no{ border-color:#ef4444; }
+        .last{ font-size:12px; color:#64748b; margin-top:8px; }
+        .empty{ text-align:center; color:#94a3b8; padding:30px 10px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <button class="btn-home" onclick="location.href='index.html'">🏠 العودة للرئيسية</button>
+    <h1>📞 قائمة الاتصال</h1>
+    <p class="sub">الزبائن الذين لم يؤكدوا طلبهم، أو الذين تقييمهم ضعيف: اتصل بهم ثم سجّل النتيجة.</p>
+
+    <div class="controls">
+        <button class="filter active" id="fAll" type="button"></button>
+        <button class="filter" id="fNoResp" type="button"></button>
+        <button class="filter" id="fRisky" type="button"></button>
+        <label class="hours">بدون رد بعد:
+            <select id="hoursSelect">
+                <option value="1">ساعة</option>
+                <option value="3">3 ساعات</option>
+                <option value="6">6 ساعات</option>
+                <option value="24">24 ساعة</option>
+            </select>
+        </label>
+    </div>
+
+    <div id="list">جاري التحميل...</div>
+</div>
+
+<script>
+const sellerId = localStorage.getItem('sellerId');
+
+const RESULT_LABEL = {
+    confirmed:  '✅ أكّد الطلب',
+    refused:    '❌ ألغى الطلب',
+    no_answer:  '📵 لم يرد',
+    call_later: '⏰ يطلب الاتصال لاحقاً'
+};
+
+let items = [];
+let filter = 'all';   // 'all' | 'noresp' | 'risky'
+let busyId = null;
+
+function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+}
+
+// 213556751401 -> 0556751401
+function localPhone(p) {
+    return /^213\d{9}$/.test(String(p)) ? '0' + String(p).slice(3) : String(p ?? '');
+}
+
+function ageText(hours) {
+    if (hours === null || hours === undefined) return '';
+    if (hours < 1) return 'منذ أقل من ساعة';
+    if (hours < 24) return 'منذ ' + hours + ' ساعة';
+    return 'منذ ' + Math.floor(hours / 24) + ' يوم';
+}
+
+function hasReason(i, r) { return i.reasons.indexOf(r) !== -1; }
+
+function cardHtml(i) {
+    const noResp = hasReason(i, 'no_response');
+    const risky = hasReason(i, 'risky');
+    const cls = noResp && risky ? 'both' : risky ? 'risky' : 'noresp';
+    const id = esc(i.transactionId);
+    const busy = busyId === i.transactionId ? ' disabled' : '';
+
+    let tags = '';
+    if (noResp) tags += '<span class="tag tag-noresp">⏳ بدون رد ' + esc(ageText(i.ageHours)) + '</span>';
+    if (risky) {
+        tags += '<span class="tag tag-risky">🔴 زبون غير موثوق ' + (i.client.score === null ? '' : esc(i.client.score) + '%') +
+                ' (📦 ' + esc(i.client.ok) + ' · ↩️ ' + esc(i.client.ko) + ')</span>';
+    }
+    if (i.confirmed) tags += '<span class="tag tag-info">✅ الطلب مؤكد</span>';
+
+    const last = i.calls && i.calls.last
+        ? '<div class="last">📞 ' + esc(i.calls.count) + ' محاولة — آخرها: ' + esc(RESULT_LABEL[i.calls.last.result] || '') + '</div>'
+        : '';
+
+    const chips = ['confirmed', 'refused', 'no_answer', 'call_later'].map(r =>
+        '<button class="chip' + (r === 'confirmed' ? ' chip-ok' : r === 'refused' ? ' chip-no' : '') + '" type="button"' + busy +
+        ' data-act="result" data-result="' + r + '" data-id="' + id + '">' + RESULT_LABEL[r] + '</button>'
+    ).join('');
+
+    return '<div class="card ' + cls + '">' +
+        '<div class="name">👤 ' + esc(i.clientName) + '</div>' +
+        '<div class="details">' +
+            '<div>📞 <bdi>' + esc(localPhone(i.clientPhone)) + '</bdi></div>' +
+            '<div>🔖 ' + esc(i.productRef) + ' — 💰 ' + esc(i.amount) + ' دج</div>' +
+        '</div>' +
+        '<div class="tags">' + tags + '</div>' +
+        '<div class="actions">' +
+            '<a class="btn btn-call" href="tel:+' + esc(i.clientPhone) + '">📞 اتصال</a>' +
+            (i.confirmed ? '' : '<button class="btn btn-wa" type="button" data-act="remind" data-id="' + id + '">💬 تذكير واتساب</button>') +
+        '</div>' +
+        '<div class="results">' +
+            '<div class="results-title">نتيجة المكالمة:</div>' +
+            '<div class="chips">' + chips + '</div>' +
+            last +
+        '</div>' +
+    '</div>';
+}
+
+function render() {
+    const noResp = items.filter(i => hasReason(i, 'no_response')).length;
+    const risky = items.filter(i => hasReason(i, 'risky')).length;
+    const fAll = document.getElementById('fAll');
+    const fNo = document.getElementById('fNoResp');
+    const fRi = document.getElementById('fRisky');
+    fAll.textContent = 'الكل (' + items.length + ')';
+    fNo.textContent = '⏳ بدون رد (' + noResp + ')';
+    fRi.textContent = '🔴 غير موثوقين (' + risky + ')';
+    fAll.classList.toggle('active', filter === 'all');
+    fNo.classList.toggle('active', filter === 'noresp');
+    fRi.classList.toggle('active', filter === 'risky');
+
+    const shown = items.filter(i =>
+        filter === 'all' ||
+        (filter === 'noresp' && hasReason(i, 'no_response')) ||
+        (filter === 'risky' && hasReason(i, 'risky')));
+
+    document.getElementById('list').innerHTML = shown.length
+        ? shown.map(cardHtml).join('')
+        : '<div class="empty">لا يوجد أحد للاتصال به الآن 👍</div>';
+}
+
+async function loadList() {
+    const list = document.getElementById('list');
+    if (!sellerId) { list.textContent = 'لم يتم العثور على هوية البائع'; return; }
+    const hours = document.getElementById('hoursSelect').value;
+    try {
+        const res = await fetch('/call-list/' + encodeURIComponent(sellerId) + '?hours=' + encodeURIComponent(hours));
+        const data = await res.json();
+        items = data.items || [];
+        render();
+    } catch {
+        list.textContent = 'تعذر تحميل القائمة';
+    }
+}
+
+async function sendResult(id, result) {
+    if (result === 'refused' && !confirm('هل تريد فعلاً إلغاء هذا الطلب؟')) return;
+    busyId = id; render();
+    try {
+        const res = await fetch('/transaction/' + encodeURIComponent(id) + '/call', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sellerId, result })
+        });
+        const data = await res.json();
+        if (!data.success) alert(data.message || 'حدث خطأ');
+    } catch {
+        alert('تعذر الاتصال بالخادم');
+    }
+    busyId = null;
+    await loadList();   // la liste est recalculée par le serveur
+}
+
+function remind(id) {
+    const i = items.find(x => x.transactionId === id);
+    if (!i) return;
+    const link = location.origin + '/client.html?id=' + encodeURIComponent(id);
+    const text = encodeURIComponent('مرحبا، نذكّرك بتأكيد طلبك:\n' + link);
+    window.open('https://wa.me/' + i.clientPhone + '?text=' + text, '_blank');
+}
+
+// Réglage « sans réponse après N heures » mémorisé sur l'appareil
+const savedHours = localStorage.getItem('callListHours');
+if (savedHours && ['1', '3', '6', '24'].indexOf(savedHours) !== -1) document.getElementById('hoursSelect').value = savedHours;
+else document.getElementById('hoursSelect').value = '3';
+
+document.getElementById('hoursSelect').addEventListener('change', (e) => {
+    localStorage.setItem('callListHours', e.target.value);
+    loadList();
+});
+document.getElementById('fAll').onclick = () => { filter = 'all'; render(); };
+document.getElementById('fNoResp').onclick = () => { filter = 'noresp'; render(); };
+document.getElementById('fRisky').onclick = () => { filter = 'risky'; render(); };
+
+document.getElementById('list').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    if (btn.dataset.act === 'result') sendResult(btn.dataset.id, btn.dataset.result);
+    if (btn.dataset.act === 'remind') remind(btn.dataset.id);
+});
+
+loadList();
+</script>
+</body>
+</html>

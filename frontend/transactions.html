@@ -1,59 +1,261 @@
 <!DOCTYPE html>
-<html lang="fr" dir="rtl">
+<html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Confirmi – Mes Transactions</title>
+    <title>Confirmi – قائمة المعاملات</title>
     <style>
         body{ margin:0; font-family:Arial, sans-serif; background:#0f172a; color:#fff; padding:20px; text-align: right;}
         .container{ max-width:800px; margin:0 auto; }
         h1{ text-align:center; color:#38bdf8; }
-        .card{ background:#1e293b; padding:15px; border-radius:10px; margin-bottom:15px; border-left:5px solid #334155; display: flex; justify-content: space-between; align-items: center; }
-        .card.confirmed{ border-left-color:#22c55e; }
-        .card.refused{ border-left-color:#ef4444; }
-        .content-area { flex-grow: 1; }
+        .card{ background:#1e293b; padding:15px; border-radius:10px; margin-bottom:15px; border-right:5px solid #334155; }
+        .card.confirmed{ border-right-color:#22c55e; }
+        .card.refused{ border-right-color:#ef4444; }
+        .card.delivered{ border-right-color:#22c55e; }
+        .card.returned{ border-right-color:#f59e0b; }
+        .top{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
         .status{ font-weight:bold; }
-        .details{ font-size:14px; color:#94a3b8; }
-        .btn-view { background: #38bdf8; color: #0f172a; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: bold; }
+        .details{ font-size:14px; color:#94a3b8; line-height:1.8; }
+        .btn-view { background: #38bdf8; color: #0f172a; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: bold; white-space:nowrap; }
         .btn-home { background: #334155; color: white; margin-bottom: 20px; padding: 10px; border-radius: 8px; border: none; cursor: pointer; }
+        .filters{ display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+        .filter{ background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 14px; border-radius:20px; cursor:pointer; font-size:14px; }
+        .filter.active{ background:#38bdf8; color:#0f172a; border-color:#38bdf8; font-weight:bold; }
+        .outcome{ margin-top:12px; padding-top:12px; border-top:1px solid #334155; }
+        .outcome-line{ font-size:14px; margin-bottom:8px; }
+        .outcome-actions{ display:flex; gap:10px; flex-wrap:wrap; }
+        .btn{ flex:1; min-width:130px; padding:12px; border:none; border-radius:8px; font-size:15px; font-weight:bold; cursor:pointer; }
+        .btn-delivered{ background:#22c55e; color:#022c22; }
+        .btn-returned{ background:#f59e0b; color:#1c1203; }
+        .btn-edit{ background:#334155; color:#fff; flex:0 0 auto; min-width:0; padding:8px 14px; font-size:13px; }
+        .btn-save{ background:#38bdf8; color:#0f172a; }
+        .btn-cancel{ background:#334155; color:#fff; }
+        .btn:disabled{ opacity:.5; cursor:default; }
+        .reason-panel{ margin-top:10px; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:12px; }
+        .reason-panel label{ display:block; font-size:14px; margin-bottom:8px; color:#cbd5e1; }
+        .reason-panel select{ width:100%; padding:11px; border-radius:8px; border:1px solid #334155; background:#1e293b; color:#fff; font-size:14px; margin-bottom:10px; }
+        .muted{ color:#64748b; font-size:13px; }
+        .awaiting{ color:#fbbf24; font-size:13px; }
     </style>
 </head>
 <body>
 <div class="container">
     <button class="btn-home" onclick="location.href='index.html'">🏠 العودة للرئيسية</button>
     <h1>🧾 قائمة المعاملات</h1>
-    <div id="transactionsList">Chargement...</div>
+
+    <div class="filters">
+        <button class="filter active" id="filterAll" type="button"></button>
+        <button class="filter" id="filterAwaiting" type="button"></button>
+    </div>
+
+    <div id="transactionsList">جاري التحميل...</div>
 </div>
+
 <script>
 const sellerId = localStorage.getItem('sellerId');
-async function loadTransactions(){
-    if(!sellerId) return document.getElementById('transactionsList').innerText = 'لم يتم العثور على هوية البائع';
-    const res = await fetch('/transactions/' + sellerId);
-    const data = await res.json();
-    const list = document.getElementById('transactionsList');
-    list.innerHTML = '';
-    if(data.transactions.length === 0) list.innerHTML = 'لا توجد معاملات.';
-    data.transactions.reverse().forEach(t => {
-        const div = document.createElement('div');
-        const cardClass = t.confirmed ? 'confirmed' : t.refused ? 'refused' : '';
-        const statusLabel = t.confirmed ? '✅ مؤكدة' : t.refused ? '❌ مرفوضة' : '⏳ قيد الانتظار';
-        div.className = `card ${cardClass}`;
-        div.innerHTML = `
-            <div class="content-area">
-                <div class="status">${statusLabel}</div>
-                <div class="details">
-                    <div>👤 الزبون: ${t.clientName}</div>
-                    <div>📞 الهاتف: ${t.clientPhone}</div>
-                    <div>📦 المنتج: ${t.productRef}</div>
-                    <div>💰 السعر: ${t.amount} دج</div>
-                    ${t.confirmed && t.attachment ? `<div>📎 <a href="${t.attachment}" target="_blank" style="color: #38bdf8; text-decoration: none;">تحميل وصل التأكيد</a></div>` : ''}
-                </div>
-            </div>
-            <div class="actions"><a href="client.html?id=${t.transactionId}" class="btn-view" target="_blank">عرض</a></div>
-        `;
-        list.appendChild(div);
-    });
+
+// Motifs de retour. affects = le motif compte contre le client dans sa note.
+const REASONS = [
+    { key: 'refused',       label: 'رفض الاستلام عند التسليم',          affects: true  },
+    { key: 'unreachable',   label: 'لا يرد على الهاتف',                 affects: true  },
+    { key: 'wrong_address', label: 'عنوان غير صحيح / تعذر الوصول',      affects: false },
+    { key: 'other',         label: 'سبب آخر',                          affects: false }
+];
+
+let transactions = [];
+let filter = 'all';          // 'all' | 'awaiting'
+let openPanelFor = null;     // id de la commande dont le choix du motif est ouvert
+
+// Échappe le texte venant des utilisateurs avant de l'insérer dans la page
+function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
 }
+
+// 213556751401 -> 0556751401 (format que les vendeurs ont l'habitude de lire)
+function localPhone(p) {
+    return /^213\d{9}$/.test(String(p)) ? '0' + String(p).slice(3) : String(p ?? '');
+}
+
+function reasonLabel(key) {
+    const r = REASONS.find(x => x.key === key);
+    return r ? r.label : '';
+}
+
+function isAwaiting(t) {
+    return t.confirmed && !t.outcome;
+}
+
+function createdDate(t) {
+    const d = new Date(t.createdAt || parseInt(t.transactionId));
+    return isNaN(d) ? '' : d.toLocaleDateString('fr-FR');
+}
+
+function outcomeHtml(t) {
+    const id = esc(t.transactionId);
+
+    if (t.refused) {
+        return '<div class="outcome"><span class="muted">الزبون رفض الطلب عبر الرابط: لا حاجة لتسجيل التسليم.</span></div>';
+    }
+
+    const o = t.outcome;
+    const editing = openPanelFor === t.transactionId;
+
+    let line = '';
+    let actions = '';
+
+    if (o) {
+        if (o.status === 'delivered') {
+            line = '📦 <b>تم التسليم</b> ✓ <span class="muted">(يُحتسب في تقييم الزبون)</span>';
+        } else {
+            line = '↩️ <b>مرتجع</b> — ' + esc(reasonLabel(o.reason)) +
+                (o.affectsScore
+                    ? ' <span class="muted">(يؤثر على تقييم الزبون)</span>'
+                    : ' <span class="muted">(لا يؤثر على التقييم)</span>');
+        }
+        if (o.locked) {
+            line += ' <span class="muted">🔒</span>';
+        } else if (!editing) {
+            actions = '<button class="btn btn-edit" type="button" data-act="edit" data-id="' + id + '">✏️ تعديل</button>';
+        }
+    }
+
+    // Boutons de résultat : pas encore de résultat, ou mode édition
+    if (!o || (editing && !o.locked)) {
+        actions =
+            '<button class="btn btn-delivered" type="button" data-act="delivered" data-id="' + id + '">📦 تم التسليم</button>' +
+            '<button class="btn btn-returned" type="button" data-act="returned" data-id="' + id + '">↩️ مرتجع</button>';
+    }
+
+    let panel = '';
+    if (editing) {
+        const options = REASONS.map(r =>
+            '<option value="' + r.key + '"' + (o && o.reason === r.key ? ' selected' : '') + '>' +
+            esc(r.label) + (r.affects ? ' (يؤثر على التقييم)' : ' (لا يؤثر على التقييم)') + '</option>'
+        ).join('');
+        panel =
+            '<div class="reason-panel">' +
+              '<label for="reason-' + id + '">سبب الإرجاع:</label>' +
+              '<select id="reason-' + id + '">' + options + '</select>' +
+              '<div class="outcome-actions">' +
+                '<button class="btn btn-save" type="button" data-act="save-returned" data-id="' + id + '">حفظ</button>' +
+                '<button class="btn btn-cancel" type="button" data-act="cancel" data-id="' + id + '">إلغاء</button>' +
+              '</div>' +
+            '</div>';
+    }
+
+    const hint = !o && t.confirmed ? '<div class="awaiting">⏳ لم تسجّل نتيجة التسليم بعد</div>' : '';
+
+    return '<div class="outcome">' + hint +
+        (line ? '<div class="outcome-line">' + line + '</div>' : '') +
+        (actions ? '<div class="outcome-actions">' + actions + '</div>' : '') +
+        panel + '</div>';
+}
+
+function cardHtml(t) {
+    const viaPhone = (t.confirmed && t.confirmedBy === 'phone') || (t.refused && t.refusedBy === 'phone') ? ' (بالهاتف)' : '';
+    const linkStatus = (t.confirmed ? '✅ مؤكدة' : t.refused ? '❌ مرفوضة' : '⏳ قيد الانتظار') + viaPhone;
+    const cls = t.outcome
+        ? (t.outcome.status === 'delivered' ? 'delivered' : 'returned')
+        : (t.confirmed ? 'confirmed' : t.refused ? 'refused' : '');
+    const attachment = t.confirmed && typeof t.attachment === 'string' && t.attachment.startsWith('/uploads/')
+        ? '<div>📎 <a href="' + esc(t.attachment) + '" target="_blank" rel="noopener" style="color:#38bdf8;text-decoration:none;">تحميل وصل التأكيد</a></div>'
+        : '';
+
+    return '<div class="card ' + cls + '">' +
+        '<div class="top">' +
+          '<div>' +
+            '<div class="status">' + linkStatus + '</div>' +
+            '<div class="details">' +
+              '<div>👤 الزبون: ' + esc(t.clientName) + '</div>' +
+              '<div>📞 الهاتف: <bdi>' + esc(localPhone(t.clientPhone)) + '</bdi></div>' +
+              '<div>📦 المنتج: ' + esc(t.productRef) + '</div>' +
+              '<div>💰 السعر: ' + esc(t.amount) + ' دج</div>' +
+              '<div>📅 ' + esc(createdDate(t)) + '</div>' +
+              attachment +
+            '</div>' +
+          '</div>' +
+          '<div><a href="client.html?id=' + encodeURIComponent(t.transactionId) + '" class="btn-view" target="_blank" rel="noopener">عرض</a></div>' +
+        '</div>' +
+        outcomeHtml(t) +
+    '</div>';
+}
+
+function render() {
+    const awaiting = transactions.filter(isAwaiting).length;
+    const all = document.getElementById('filterAll');
+    const aw = document.getElementById('filterAwaiting');
+    all.textContent = 'الكل (' + transactions.length + ')';
+    aw.textContent = '⏳ بانتظار نتيجة التسليم (' + awaiting + ')';
+    all.classList.toggle('active', filter === 'all');
+    aw.classList.toggle('active', filter === 'awaiting');
+
+    const list = document.getElementById('transactionsList');
+    const shown = filter === 'awaiting' ? transactions.filter(isAwaiting) : transactions;
+    list.innerHTML = shown.length
+        ? shown.map(cardHtml).join('')
+        : (filter === 'awaiting' ? 'لا توجد معاملات بانتظار نتيجة التسليم 👍' : 'لا توجد معاملات.');
+}
+
+async function loadTransactions() {
+    const list = document.getElementById('transactionsList');
+    if (!sellerId) { list.innerText = 'لم يتم العثور على هوية البائع'; return; }
+    try {
+        const res = await fetch('/transactions/' + encodeURIComponent(sellerId));
+        const data = await res.json();
+        transactions = (data.transactions || []).slice().reverse();
+        render();
+    } catch {
+        list.innerText = 'تعذر تحميل المعاملات';
+    }
+}
+
+async function sendOutcome(id, status, reason) {
+    const res = await fetch('/transaction/' + encodeURIComponent(id) + '/outcome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sellerId, status, reason })
+    });
+    const data = await res.json();
+    if (!data.success) {
+        alert(data.message || 'حدث خطأ');
+        return false;
+    }
+    const t = transactions.find(x => x.transactionId === id);
+    if (t) t.outcome = data.outcome;
+    openPanelFor = null;
+    render();
+    return true;
+}
+
+document.getElementById('filterAll').onclick = () => { filter = 'all'; render(); };
+document.getElementById('filterAwaiting').onclick = () => { filter = 'awaiting'; render(); };
+
+document.getElementById('transactionsList').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const act = btn.dataset.act;
+
+    if (act === 'edit') { openPanelFor = id; render(); return; }
+    if (act === 'cancel') { openPanelFor = null; render(); return; }
+    if (act === 'returned') { openPanelFor = id; render(); return; }
+
+    if (act === 'delivered') {
+        btn.disabled = true;
+        const ok = await sendOutcome(id, 'delivered');
+        if (!ok) btn.disabled = false;
+        return;
+    }
+    if (act === 'save-returned') {
+        const select = document.getElementById('reason-' + id);
+        btn.disabled = true;
+        const ok = await sendOutcome(id, 'returned', select ? select.value : '');
+        if (!ok) btn.disabled = false;
+    }
+});
+
 loadTransactions();
 </script>
 </body>
