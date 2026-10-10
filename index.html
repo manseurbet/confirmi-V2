@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23,17 +23,22 @@ body {
   width: 100%;
   background: #0b1220;
   border-radius: 16px;
-  padding: 32px 26px;
+  padding: 28px 22px;
   text-align: center;
   box-shadow: 0 20px 60px rgba(0,0,0,0.4);
 }
 .header-logo {
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 .header-logo img {
-  width: 260px;
-  max-width: 85%;
+  width: 220px;
+  max-width: 80%;
+}
+.shop {
+  font-size: 15px;
+  color: #94a3b8;
+  margin: 0 0 20px;
 }
 .btn {
   display: block;
@@ -42,16 +47,85 @@ body {
   border-radius: 10px;
   font-size: 17px;
   font-weight: bold;
-  margin-bottom: 12px;
   transition: opacity 0.2s;
 }
 .btn:hover { opacity: 0.85; }
-.btn-green  { background: #22c55e; color: #022c22; }
-.btn-slate  { background: #334155; color: #fff; }
-.btn-indigo { background: #1e1b4b; color: #fff; }
-.btn-blue   { background: #1e3a5f; color: #38bdf8; border: 1px solid #38bdf8; }
+.btn-main  { background: #22c55e; color: #022c22; font-size: 20px; padding: 18px; direction: ltr; }
+.btn-blue  { background: #1e3a5f; color: #38bdf8; border: 1px solid #38bdf8; }
+.btn-first { font-size: 22px; padding: 24px 14px; margin-top: 8px; }
+#boot { margin: 28px 0; }
+.caption {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 7px 4px 16px;
+  line-height: 1.6;
+}
+.task {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: right;
+  text-decoration: none;
+  color: #fff;
+  background: #1e293b;
+  border-radius: 12px;
+  padding: 13px 14px;
+  margin-bottom: 10px;
+  border-right: 5px solid #334155;
+}
+.task:hover { opacity: 0.9; }
+.task-call    { border-right-color: #f59e0b; }
+.task-deliver { border-right-color: #22c55e; }
+.task-wait    { border-right-color: #38bdf8; }
+.task .icon { font-size: 26px; }
+.task .t { font-weight: bold; font-size: 15px; }
+.task .s { font-size: 12px; color: #94a3b8; margin-top: 3px; }
+.panel {
+  text-align: right;
+  background: #122135;
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 1.9;
+  color: #cbd5e1;
+}
+.panel ol { margin: 8px 0 0; padding-right: 20px; }
+.panel .ok { color: #86efac; font-weight: bold; }
+.muted { color: #64748b; font-size: 13px; }
+.more {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 18px;
+}
+.more a {
+  text-decoration: none;
+  background: #334155;
+  color: #fff;
+  border-radius: 10px;
+  padding: 12px 6px;
+  font-size: 13px;
+  font-weight: bold;
+}
+.account-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.account-row a, .account-row button {
+  flex: 1;
+  padding: 11px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #cbd5e1;
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
+}
 .note {
-  margin-top: 20px;
+  margin-top: 18px;
   font-size: 12px;
   opacity: 0.5;
   line-height: 1.7;
@@ -62,18 +136,143 @@ body {
 <div class="container">
   <div class="box">
     <div class="header-logo">
-      <img src="frontend/logo.png" alt="Confirmi">
+      <img src="logo.png" alt="Confirmi">
     </div>
 
-    <a href="frontend/vendeur.html" class="btn btn-green">📦 إستمارة البائع</a>
-    <a href="frontend/import.html"       class="btn btn-blue">📋 إرسال جماعي</a>
-    <a href="frontend/transactions.html" class="btn btn-slate">🧾 قائمة المعاملات</a>
-    <a href="frontend/admin.html"        class="btn btn-indigo">📊 الاحصائيات</a>
+    <div class="shop" id="shopName"></div>
+
+    <div id="boot" class="muted">جاري التحميل...</div>
+
+    <!-- Nouveau vendeur (aucune commande) : un seul bouton -->
+    <div id="simple" style="display:none;">
+      <a href="vendeur.html" class="btn btn-main btn-first">➕ أنشئ أول طلب</a>
+      <div class="caption">أدخل بيانات زبون وأرسل له رابط التأكيد: دقيقتان فقط</div>
+    </div>
+
+    <!-- Vendeur qui a déjà des commandes : accueil complet (inchangé) -->
+    <div id="full" style="display:none;">
+      <a href="vendeur.html" class="btn btn-main">+ Nouvelle commande</a>
+      <div class="caption">أدخل بيانات الزبون (أو الصق رسالته من Facebook) ثم أرسل له رابط التأكيد عبر WhatsApp</div>
+
+      <a href="import.html" class="btn btn-blue">📋 إرسال جماعي (Google Sheets)</a>
+      <div class="caption">لإرسال عدة طلبات دفعة واحدة: انسخ الجدول والصقه</div>
+
+      <div id="todo" style="margin-top:6px;"><div class="panel muted">جاري التحميل...</div></div>
+
+      <div class="more">
+        <a href="calls.html">📞 قائمة الاتصال</a>
+        <a href="transactions.html">🧾 المعاملات</a>
+        <a href="admin.html">📊 الإحصائيات</a>
+      </div>
+    </div>
+
+    <div class="account-row">
+      <a href="account.html">👤 حسابي</a>
+      <button type="button" onclick="logout()">🚪 خروج</button>
+    </div>
 
     <div class="note">
       بدون تطبيق • بدون تعقيد • يعمل فورًا
     </div>
   </div>
 </div>
+<script src="auth.js"></script>
+<script>
+  /* ---------- nom de la boutique et note ---------- */
+  var shopEl = document.getElementById('shopName');
+  function showShop(name, rating) {
+    if (!name) return;
+    var line = '🏪 ' + name;
+    if (rating) line += rating.count > 0 ? '  ·  ⭐ ' + rating.average + ' (' + rating.count + ')' : '  ·  ⭐ لا توجد تقييمات بعد';
+    shopEl.textContent = line;
+  }
+  showShop(localStorage.getItem('shopName'), null);
+  fetch('/me').then(function (r) { return r.json(); }).then(function (d) {
+    if (d && d.success) {
+      localStorage.setItem('shopName', d.shopName);
+      localStorage.setItem('shopPhone', d.phone || '');
+      showShop(d.shopName, d.rating);
+    }
+  }).catch(function () {});
+
+  /* ---------- tâches en attente du vendeur ---------- */
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function task(t) {
+    var a = el('a', 'task ' + t.cls);
+    a.href = t.href;
+    a.appendChild(el('div', 'icon', t.icon));
+    var body = el('div');
+    body.appendChild(el('div', 't', t.title));
+    body.appendChild(el('div', 's', t.sub));
+    a.appendChild(body);
+    return a;
+  }
+
+  var boot = document.getElementById('boot');
+  var simple = document.getElementById('simple');
+  var full = document.getElementById('full');
+
+  function show(view) {
+    boot.style.display = 'none';
+    simple.style.display = view === 'simple' ? 'block' : 'none';
+    full.style.display = view === 'full' ? 'block' : 'none';
+  }
+
+  function renderTodo(stats, callsCount) {
+    var box = document.getElementById('todo');
+    box.textContent = '';
+
+    var tasks = [];
+    if (callsCount) tasks.push({ href: 'calls.html', cls: 'task-call', icon: '📞', title: callsCount + ' زبون يجب الاتصال بهم', sub: 'لم يردّوا على الرابط أو تقييمهم ضعيف' });
+    if (stats.awaiting) tasks.push({ href: 'transactions.html?f=awaiting', cls: 'task-deliver', icon: '📦', title: stats.awaiting + ' طلب بانتظار نتيجة التسليم', sub: 'سجّل «تم التسليم» أو «مرتجع»' });
+    if (stats.pending) tasks.push({ href: 'transactions.html', cls: 'task-wait', icon: '⏳', title: stats.pending + ' طلب ينتظر تأكيد الزبون', sub: 'أرسل تذكيراً أو اتصل بهم' });
+
+    if (!tasks.length) {
+      var ok = el('div', 'panel');
+      ok.appendChild(el('div', 'ok', '✅ كل شيء مرتب'));
+      ok.appendChild(el('div', 'muted', 'عند وصول طلب جديد اضغط «+ Nouvelle commande».'));
+      box.appendChild(ok);
+      return;
+    }
+    tasks.forEach(function (t) { box.appendChild(task(t)); });
+  }
+
+  // Nouveau vendeur (aucune commande) -> un seul bouton ; dès la première commande -> accueil complet.
+  // On retient « a déjà des commandes » dans le navigateur (par compte) pour ne montrer aucun écran intermédiaire.
+  var ordersFlag = 'hasOrders_' + (localStorage.getItem('sellerId') || '');
+
+  function loadHome() {
+    if (localStorage.getItem(ordersFlag) === '1') show('full');
+
+    var hours = localStorage.getItem('callListHours') || '3';
+    Promise.all([
+      fetch('/admin/dashboard/me').then(function (r) { return r.json(); }),
+      fetch('/call-list/me?hours=' + encodeURIComponent(hours)).then(function (r) { return r.json(); })
+    ]).then(function (res) {
+      var stats = res[0].stats || {};
+      if (!stats.total) {
+        localStorage.removeItem(ordersFlag);
+        show('simple');
+        return;
+      }
+      localStorage.setItem(ordersFlag, '1');
+      show('full');
+      renderTodo(stats, (res[1].items || []).length);
+    }).catch(function () {
+      // hors ligne : on affiche l'accueil complet pour que toutes les fonctions restent accessibles
+      show('full');
+      var box = document.getElementById('todo');
+      box.textContent = '';
+      box.appendChild(el('div', 'panel muted', 'تعذر تحميل المهام. تحقق من الاتصال بالإنترنت.'));
+    });
+  }
+  loadHome();
+</script>
 </body>
 </html>
