@@ -39,6 +39,9 @@ label{font-size:13px;color:#94a3b8;display:block;margin-bottom:4px;}
 .btn-row-wa{background:#25d366;color:#fff;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;margin-left:4px;}
 .btn-row-sms{background:#0ea5e9;color:#fff;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;}
 .dupbox{font-size:13px;color:#fde68a;margin:10px 0 0;}
+.msgbox{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px;margin-bottom:14px;}
+.msgbox label{margin-bottom:6px;}
+.msgpreview{white-space:pre-wrap;font-size:13px;line-height:1.8;color:#cbd5e1;margin-top:10px;direction:rtl;}
 .note-cell{white-space:nowrap;font-size:12px;}
 .note-counts{font-size:11px;color:#64748b;margin-top:2px;}
 .note-trusted{color:#86efac;}
@@ -68,6 +71,15 @@ label{font-size:13px;color:#94a3b8;display:block;margin-bottom:4px;}
   <div class="box" id="resultsBox" style="display:none;">
     <h2 style="color:#38bdf8;">📦 الطلبات المكتشفة</h2>
 
+    <div class="msgbox">
+      <label for="msgLang">💬 لغة الرسالة التي تصل للزبون</label>
+      <select id="msgLang">
+        <option value="darija">دارجة جزائرية</option>
+        <option value="arabic">عربية مبسطة</option>
+      </select>
+      <div class="msgpreview" id="msgPreview"></div>
+    </div>
+
     <div class="summary" id="summary"></div>
     <div id="warnings"></div>
 
@@ -88,15 +100,11 @@ label{font-size:13px;color:#94a3b8;display:block;margin-bottom:4px;}
 
 </div>
 
+<script src="auth.js"></script>
+<script src="messages.js"></script>
 <script src="detect-orders.js"></script>
 <script>
-function newSellerId() {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return 'seller_' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-}
-const sellerId = localStorage.getItem('sellerId') || newSellerId();
-localStorage.setItem('sellerId', sellerId);
+const sellerId = localStorage.getItem('sellerId'); // fixé à la connexion
 
 /* ------------------------------------------------------------------ */
 /* Données                                                             */
@@ -303,8 +311,9 @@ function statusCell(r) {
 
 function sendCell(r) {
   if (r.status !== 'ok' || !r.link) return '';
-  const msg = encodeURIComponent('مرحبا، يرجى تأكيد طلبك:\n' + r.link);
-  const smsMsg = encodeURIComponent('تأكيد الطلب: ' + r.link);
+  const order = { name: r.name, product: r.product, price: r.price, link: r.link };
+  const msg = encodeURIComponent(Messages.confirm(order));
+  const smsMsg = encodeURIComponent(Messages.confirmSms(order));
   return '<button class="btn-row-wa" type="button" data-wa="' + esc(r.waPhone) + '" data-text="' + esc(msg) + '">💬 WA</button>' +
          '<button class="btn-row-sms" type="button" data-sms="' + esc(r.waPhone) + '" data-text="' + esc(smsMsg) + '">📱 SMS</button>';
 }
@@ -358,6 +367,13 @@ function render() {
   const editor = document.getElementById('columnsEditor');
   editor.style.display = editorOpen ? 'grid' : 'none';
   if (editorOpen) editor.innerHTML = editorHtml();
+
+  // Aperçu du message : celui de la première commande valide (lien d'exemple tant que rien n'est créé)
+  const first = rows.find(r => r.status !== 'invalid');
+  const previewOrder = first
+    ? { name: first.name, product: first.product, price: first.price, link: first.link || (location.origin + '/client.html?id=…') }
+    : Messages.sample();
+  document.getElementById('msgPreview').textContent = Messages.confirm(previewOrder);
 
   document.getElementById('dupBox').style.display = rows.some(r => r.dup) ? 'block' : 'none';
   document.getElementById('tableContainer').innerHTML = tableHtml();
@@ -445,6 +461,13 @@ document.getElementById('columnsEditor').addEventListener('change', (e) => {
 });
 
 document.getElementById('includeDup').addEventListener('change', render);
+
+document.getElementById('msgLang').value = Messages.lang();
+document.getElementById('msgLang').addEventListener('change', (e) => {
+  Messages.setLang(e.target.value);
+  render();   // les boutons WhatsApp / SMS des lignes déjà créées prennent la nouvelle langue
+});
+Messages.refresh().then(render);
 document.getElementById('sendAllBtn').addEventListener('click', createAll);
 
 document.getElementById('tableContainer').addEventListener('click', (e) => {

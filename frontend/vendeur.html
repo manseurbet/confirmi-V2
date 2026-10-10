@@ -22,6 +22,11 @@ button:hover{opacity:0.9;}
 #resultSection{display:none;margin-top:25px;padding:20px;background:#122135;border-radius:12px;border:1px dashed #22c55e;text-align:center;}
 .btn-whatsapp{background:#25d366;color:#fff;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:8px;}
 .btn-sms{background:#0ea5e9;color:#fff;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:8px;}
+.paste-box{background:#122135;border:1px dashed #38bdf8;border-radius:12px;padding:14px;margin-bottom:18px;}
+.paste-box label{display:block;margin-bottom:8px;color:#7dd3fc;}
+.btn-fill{background:#1e3a5f;color:#38bdf8;border:1px solid #38bdf8;margin-top:10px;padding:11px;font-size:14px;}
+.fill-result{font-size:13px;margin-top:10px;line-height:1.8;}
+.fill-ok{color:#86efac;} .fill-miss{color:#fcd34d;}
 .btn-contact{background:#7c3aed;color:#fff;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:8px;}
 </style>
 </head>
@@ -37,6 +42,13 @@ button:hover{opacity:0.9;}
       <div id="scoreCounts" style="font-size:13px;color:#94a3b8;margin-top:6px;"></div>
       <div id="scoreHint" style="font-size:12px;color:#64748b;margin-top:4px;"></div>
     </div>
+    <div class="paste-box">
+      <label for="pasteText">📋 الصق رسالة الزبون (من Facebook أو Messenger أو WhatsApp)</label>
+      <textarea id="pasteText" rows="3" placeholder="انسخ رسالة الزبون والصقها هنا: يتم التعرف على الهاتف والسعر والاسم تلقائياً"></textarea>
+      <button type="button" id="fillBtn" class="btn-fill">⚡ تعبئة تلقائية</button>
+      <div id="fillResult" class="fill-result" role="status"></div>
+    </div>
+
     <form id="orderForm">
       <input type="hidden" id="sellerId">
       <label>رقم هاتف الزبون</label>
@@ -57,6 +69,15 @@ button:hover{opacity:0.9;}
 
     <div id="resultSection">
       <p style="color:#22c55e;font-weight:bold;font-size:18px;">✅ تم إنشاء الطلب بنجاح!</p>
+      <div style="text-align:right;margin-bottom:16px;">
+        <label for="msgLang" style="font-size:12px;color:#94a3b8;display:block;margin-bottom:4px;">لغة الرسالة</label>
+        <select id="msgLang" style="width:100%;padding:10px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#fff;font-size:14px;margin-bottom:10px;">
+          <option value="darija">دارجة جزائرية</option>
+          <option value="arabic">عربية مبسطة</option>
+        </select>
+        <label for="msgPreview" style="font-size:12px;color:#94a3b8;display:block;margin-bottom:4px;">الرسالة (يمكنك تعديلها قبل الإرسال)</label>
+        <textarea id="msgPreview" rows="8" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#fff;font-size:13px;font-family:inherit;line-height:1.7;resize:vertical;"></textarea>
+      </div>
       <p style="color:#94a3b8;font-size:14px;margin-top:0;">اختر طريقة إرسال الرابط للزبون:</p>
       <button class="btn-contact" onclick="addContact()">
         <span style="font-size:20px;">👤</span> Ajouter aux contacts
@@ -70,18 +91,17 @@ button:hover{opacity:0.9;}
     </div>
   </div>
 </div>
+<script src="auth.js"></script>
+<script src="messages.js"></script>
+<script src="detect-orders.js"></script>
+<script src="parse-order.js"></script>
 <script>
-function newSellerId() {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return 'seller_' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-}
-const sellerId = localStorage.getItem('sellerId') || newSellerId();
-localStorage.setItem('sellerId', sellerId);
+const sellerId = localStorage.getItem('sellerId'); // fixé à la connexion
 document.getElementById('sellerId').value = sellerId;
 
 let generatedLink = '';
 let clientPhoneNumber = '';
+let lastOrder = null;   // sert à construire le message
 
 const phoneInput = document.getElementById('clientPhone');
 
@@ -167,6 +187,15 @@ document.getElementById('orderForm').onsubmit = async (e) => {
   if (data.success) {
     generatedLink = data.clientLink;
     clientPhoneNumber = data.clientPhone;
+    lastOrder = {
+      name: document.getElementById('clientName').value,
+      product: document.getElementById('productRef').value,
+      price: document.getElementById('amount').value,
+      link: data.clientLink
+    };
+    document.getElementById('msgLang').value = Messages.lang();
+    Messages.refresh().then(renderMessage);
+    renderMessage();
     document.getElementById('orderForm').style.display = 'none';
     document.getElementById('resultSection').style.display = 'block';
   } else {
@@ -187,14 +216,57 @@ function addContact() {
   URL.revokeObjectURL(url);
 }
 
+/* remplir le formulaire depuis un message copié (Facebook, Messenger, WhatsApp...) */
+const FIELD_LABELS = { phone: 'الهاتف', name: 'الاسم', product: 'المنتج', price: 'السعر' };
+
+function fillFromText() {
+  const text = document.getElementById('pasteText').value;
+  const out = document.getElementById('fillResult');
+  if (!text.trim()) { out.textContent = ''; return; }
+
+  const r = ParseOrder.parseOrderText(text);
+  const set = (id, value) => { document.getElementById(id).value = value; };
+
+  if (r.found.phone) {
+    set('clientPhone', r.phone);
+    document.getElementById('clientPhone').dispatchEvent(new Event('input'));   // affiche la note du client
+  }
+  if (r.found.name) set('clientName', r.name);
+  if (r.found.product) set('productRef', r.product);
+  if (r.found.price) set('amount', String(r.price));
+  if (r.found.description) set('description', r.description);
+
+  const required = ['phone', 'name', 'product', 'price'];
+  const ok = required.filter(k => r.found[k]).map(k => FIELD_LABELS[k]);
+  const miss = required.filter(k => !r.found[k]).map(k => FIELD_LABELS[k]);
+
+  let html = '';
+  if (ok.length) html += '<div class="fill-ok">✅ تم التعرف على: ' + ok.join('، ') + '</div>';
+  if (miss.length) html += '<div class="fill-miss">✍️ أكمل يدوياً: ' + miss.join('، ') + '</div>';
+  if (!ok.length) html = '<div class="fill-miss">لم أجد معلومات واضحة في هذه الرسالة، أدخلها يدوياً.</div>';
+  out.innerHTML = html;
+}
+
+document.getElementById('fillBtn').addEventListener('click', fillFromText);
+// Après un collage, on remplit tout de suite
+document.getElementById('pasteText').addEventListener('paste', () => setTimeout(fillFromText, 50));
+
+function renderMessage() {
+  if (lastOrder) document.getElementById('msgPreview').value = Messages.confirm(lastOrder);
+}
+
+document.getElementById('msgLang').addEventListener('change', (e) => {
+  Messages.setLang(e.target.value);
+  renderMessage();   // remplace le texte affiché par la version dans la langue choisie
+});
+
 function sendWhatsApp() {
-  const msg = encodeURIComponent('مرحبا، يرجى تأكيد طلبك عبر الرابط التالي:\n' + generatedLink);
-  window.open(`https://wa.me/${clientPhoneNumber}?text=${msg}`, '_blank');
+  const text = document.getElementById('msgPreview').value.trim() || Messages.confirm(lastOrder);
+  window.open(`https://wa.me/${clientPhoneNumber}?text=${encodeURIComponent(text)}`, '_blank');
 }
 
 function sendSMS() {
-  const msg = encodeURIComponent('تأكيد الطلب: ' + generatedLink);
-  window.location.href = `sms:${clientPhoneNumber}?body=${msg}`;
+  window.location.href = `sms:+${clientPhoneNumber}?body=${encodeURIComponent(Messages.confirmSms(lastOrder))}`;
 }
 </script>
 </body>

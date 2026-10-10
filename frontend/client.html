@@ -17,6 +17,16 @@ body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#0f
 button{width:100%;padding:12px;background:#22c55e;color:#022c22;border:none;border-radius:10px;font-size:16px;font-weight:bold;}
 #vendorScoreBox{margin-bottom:15px;font-size:14px;}
 #attachmentRow{display:none;}
+#shopLine{margin-top:6px;color:#94a3b8;}
+#ratingBox{display:none;margin-top:10px;padding:18px;background:#122135;border-radius:12px;}
+#ratingBox h3{margin:0 0 6px;font-size:17px;}
+#ratingBox p{margin:0 0 12px;font-size:13px;color:#94a3b8;}
+#stars{display:flex;justify-content:center;gap:6px;margin-bottom:12px;direction:ltr;}
+.star{width:auto;padding:0 4px;background:none;color:#475569;font-size:38px;line-height:1;border:none;cursor:pointer;}
+.star.on{color:#fbbf24;}
+#ratingComment{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:none;background:#0b1220;color:#fff;font-family:inherit;font-size:14px;resize:none;margin-bottom:12px;}
+#ratingError{color:#fca5a5;font-size:13px;min-height:16px;margin-bottom:8px;}
+.info-msg{display:none;margin-top:20px;padding:15px;border-radius:10px;font-size:15px;background:#0c4a6e;}
 </style>
 </head>
 
@@ -27,10 +37,28 @@ button{width:100%;padding:12px;background:#22c55e;color:#022c22;border:none;bord
 <img src="logo.png" style="width:180px;margin-bottom:15px">
 
 <div id="vendorScoreBox">
-⭐ تقييم البائع: <span id="vendorScore">—</span>
+⭐ تقييم البائع: <b id="vendorScore">—</b>
+<div id="shopLine">🏪 <span id="shopName"></span></div>
 </div>
 
 <img id="productImage">
+
+<div id="ratingBox">
+  <h3>⭐ كيف كانت تجربتك؟</h3>
+  <p>تقييمك يساعد الزبائن الآخرين ويحفّز البائع على الأفضل.</p>
+  <div id="stars">
+    <button type="button" class="star" data-v="1" aria-label="نجمة واحدة">★</button>
+    <button type="button" class="star" data-v="2" aria-label="نجمتان">★</button>
+    <button type="button" class="star" data-v="3" aria-label="3 نجوم">★</button>
+    <button type="button" class="star" data-v="4" aria-label="4 نجوم">★</button>
+    <button type="button" class="star" data-v="5" aria-label="5 نجوم">★</button>
+  </div>
+  <textarea id="ratingComment" rows="3" maxlength="200" placeholder="تعليق اختياري (يراه البائع فقط)"></textarea>
+  <div id="ratingError" role="alert"></div>
+  <button type="button" id="ratingSubmit">إرسال التقييم</button>
+</div>
+
+<div id="infoMessage" class="info-msg"></div>
 
 <form id="clientForm" enctype="multipart/form-data">
 
@@ -114,9 +142,19 @@ async function loadTransaction(){
     description.value = t.description || "";
     productImage.src = t.photo || "";
 
-    if(t.vendorScore !== undefined){
-      vendorScore.innerText = `${t.vendorScore} ⭐ (${t.vendorBadge})`;
+    // Note du vendeur : visible à partir de 3 avis, sinon « بائع جديد »
+    if(t.vendorRating && t.vendorRating.shown){
+      vendorScore.innerText = `${t.vendorRating.average} / 5 (${t.vendorRating.count} تقييم)`;
+    } else {
+      vendorScore.innerText = "بائع جديد";
     }
+    if(t.shopName){
+      shopName.innerText = t.shopName;
+    } else {
+      shopLine.style.display = "none";
+    }
+
+    showState(t);
 
   }catch(e){
     alert("خطأ أثناء تحميل المعاملة");
@@ -125,6 +163,67 @@ async function loadTransaction(){
 }
 
 loadTransaction();
+
+/* états de la commande quand le client rouvre le lien */
+function showInfo(text){
+  const box = document.getElementById("infoMessage");
+  box.innerText = text;
+  box.style.display = "block";
+}
+
+function showState(t){
+  if(t.refused){
+    clientForm.style.display = "none";
+    document.getElementById("refusedMessage").style.display = "block";
+  } else if(t.delivered){
+    clientForm.style.display = "none";
+    if(t.rated){
+      showInfo("شكراً، تم تسجيل تقييمك ✅");
+    } else {
+      document.getElementById("ratingBox").style.display = "block";
+    }
+  } else if(t.confirmed){
+    clientForm.style.display = "none";
+    document.getElementById("successMessage").style.display = "block";
+  }
+}
+
+/* notation du vendeur */
+let chosenStars = 0;
+document.getElementById("stars").addEventListener("click", e=>{
+  const b = e.target.closest(".star");
+  if(!b) return;
+  chosenStars = Number(b.dataset.v);
+  document.querySelectorAll(".star").forEach(s=>{
+    s.classList.toggle("on", Number(s.dataset.v) <= chosenStars);
+  });
+  document.getElementById("ratingError").innerText = "";
+});
+
+document.getElementById("ratingSubmit").onclick = async ()=>{
+  const err = document.getElementById("ratingError");
+  if(!chosenStars){ err.innerText = "اختر عدد النجوم أولاً."; return; }
+  const btn = document.getElementById("ratingSubmit");
+  btn.disabled = true;
+  try{
+    const r = await fetch("/rate-transaction/"+getId(), {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ stars: chosenStars, comment: document.getElementById("ratingComment").value })
+    });
+    const d = await r.json();
+    if(d.success){
+      document.getElementById("ratingBox").style.display = "none";
+      showInfo("شكراً لك! تم إرسال تقييمك 🌷");
+    } else {
+      err.innerText = d.message || "حدث خطأ";
+      btn.disabled = false;
+    }
+  }catch(e){
+    err.innerText = "تعذر الاتصال بالخادم";
+    btn.disabled = false;
+  }
+};
 
 /* paiement */
 paymentMethod.onchange = ()=>{

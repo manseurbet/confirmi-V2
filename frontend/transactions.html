@@ -36,6 +36,9 @@
         .reason-panel select{ width:100%; padding:11px; border-radius:8px; border:1px solid #334155; background:#1e293b; color:#fff; font-size:14px; margin-bottom:10px; }
         .muted{ color:#64748b; font-size:13px; }
         .awaiting{ color:#fbbf24; font-size:13px; }
+        .rating-line{ font-size:14px; margin:6px 0 8px; color:#fde68a; }
+        .rating-comment{ color:#94a3b8; font-size:13px; margin-top:2px; }
+        .btn-rate{ background:#422006; color:#fbbf24; border:1px solid #f59e0b; flex:0 0 auto; min-width:0; padding:8px 14px; font-size:13px; }
     </style>
 </head>
 <body>
@@ -51,6 +54,8 @@
     <div id="transactionsList">جاري التحميل...</div>
 </div>
 
+<script src="auth.js"></script>
+<script src="messages.js"></script>
 <script>
 const sellerId = localStorage.getItem('sellerId');
 
@@ -63,7 +68,7 @@ const REASONS = [
 ];
 
 let transactions = [];
-let filter = 'all';          // 'all' | 'awaiting'
+let filter = new URLSearchParams(location.search).get('f') === 'awaiting' ? 'awaiting' : 'all';   // 'all' | 'awaiting'
 let openPanelFor = null;     // id de la commande dont le choix du motif est ouvert
 
 // Échappe le texte venant des utilisateurs avant de l'insérer dans la page
@@ -145,10 +150,22 @@ function outcomeHtml(t) {
             '</div>';
     }
 
+    // Avis de l'acheteur, ou bouton pour le lui demander (une fois la commande livrée)
+    let ratingHtml = '';
+    if (o && o.status === 'delivered') {
+        if (t.rating) {
+            const s = Number(t.rating.stars) || 0;
+            ratingHtml = '<div class="rating-line">⭐ تقييم الزبون: ' + '★'.repeat(s) + '☆'.repeat(5 - s) + ' (' + s + '/5)' +
+                (t.rating.comment ? '<div class="rating-comment">« ' + esc(t.rating.comment) + ' »</div>' : '') + '</div>';
+        } else if (!editing) {
+            actions += '<button class="btn btn-rate" type="button" data-act="askrating" data-id="' + id + '">⭐ اطلب تقييم الزبون</button>';
+        }
+    }
+
     const hint = !o && t.confirmed ? '<div class="awaiting">⏳ لم تسجّل نتيجة التسليم بعد</div>' : '';
 
     return '<div class="outcome">' + hint +
-        (line ? '<div class="outcome-line">' + line + '</div>' : '') +
+        (line ? '<div class="outcome-line">' + line + '</div>' : '') + ratingHtml +
         (actions ? '<div class="outcome-actions">' + actions + '</div>' : '') +
         panel + '</div>';
 }
@@ -229,6 +246,15 @@ async function sendOutcome(id, status, reason) {
     return true;
 }
 
+// Message WhatsApp pour demander l'avis du client, avec le nom de la boutique
+function askRating(id) {
+    const t = transactions.find(x => x.transactionId === id);
+    if (!t) return;
+    const link = location.origin + '/client.html?id=' + encodeURIComponent(id);
+    const text = Messages.rating({ name: t.clientName, link: link });
+    window.open('https://wa.me/' + t.clientPhone + '?text=' + encodeURIComponent(text), '_blank');
+}
+
 document.getElementById('filterAll').onclick = () => { filter = 'all'; render(); };
 document.getElementById('filterAwaiting').onclick = () => { filter = 'awaiting'; render(); };
 
@@ -238,6 +264,7 @@ document.getElementById('transactionsList').addEventListener('click', async (e) 
     const id = btn.dataset.id;
     const act = btn.dataset.act;
 
+    if (act === 'askrating') { askRating(id); return; }
     if (act === 'edit') { openPanelFor = id; render(); return; }
     if (act === 'cancel') { openPanelFor = null; render(); return; }
     if (act === 'returned') { openPanelFor = id; render(); return; }

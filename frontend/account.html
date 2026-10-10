@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Confirmi – حسابي</title>
+<style>
+body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;}
+.container{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.box{max-width:420px;width:100%;background:#0b1220;border-radius:16px;padding:28px 24px;box-shadow:0 20px 60px rgba(0,0,0,0.4);box-sizing:border-box;}
+h2{text-align:center;color:#38bdf8;margin-top:0;}
+.btn-home{background:#334155;color:white;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-size:14px;margin-bottom:16px;}
+.info{background:#1e293b;border-radius:10px;padding:14px;margin-bottom:18px;line-height:1.9;font-size:15px;}
+label{display:block;font-size:13px;color:#94a3b8;margin:12px 0 5px;}
+input{width:100%;padding:12px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#fff;font-size:15px;box-sizing:border-box;}
+.submit{width:100%;margin-top:16px;padding:13px;background:#22c55e;color:#022c22;border:none;border-radius:10px;font-size:15px;font-weight:bold;cursor:pointer;}
+.submit:disabled{opacity:.5;}
+.logout{width:100%;margin-top:22px;padding:13px;background:#7f1d1d;color:#fecaca;border:none;border-radius:10px;font-size:15px;cursor:pointer;}
+.msg{font-size:13px;min-height:18px;margin-top:12px;text-align:center;}
+.reviews{background:#1e293b;border-radius:10px;padding:14px;margin-bottom:18px;}
+.reviews h3{margin:0 0 10px;font-size:16px;color:#fde68a;}
+.avg{font-size:30px;font-weight:bold;color:#fbbf24;}
+.dist{display:flex;align-items:center;gap:8px;font-size:12px;color:#94a3b8;margin:3px 0;}
+.bar{flex:1;height:7px;background:#0f172a;border-radius:4px;overflow:hidden;}
+.bar i{display:block;height:7px;background:#fbbf24;}
+.rev{border-top:1px solid #334155;padding:8px 0;font-size:13px;}
+.rev .c{color:#cbd5e1;margin-top:2px;}
+.rev .m{color:#64748b;font-size:11px;}
+.hint{color:#64748b;font-size:12px;margin-top:6px;}
+.msgcard{background:#1e293b;border-radius:10px;padding:14px;margin-bottom:18px;}
+.msgcard h3{margin:0 0 10px;font-size:16px;color:#86efac;}
+.msgcard select{width:100%;padding:10px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#fff;font-size:14px;margin-bottom:10px;}
+.msgprev{white-space:pre-wrap;font-size:13px;line-height:1.8;color:#cbd5e1;background:#0f172a;border-radius:8px;padding:10px;direction:rtl;}
+.msg.err{color:#fca5a5;} .msg.ok{color:#86efac;}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="box">
+    <button class="btn-home" onclick="location.href='index.html'">🏠 العودة للرئيسية</button>
+    <h2>👤 حسابي</h2>
+
+    <div class="info">
+      <div>🏪 المتجر: <b id="shop">…</b></div>
+      <div>📞 الهاتف: <b id="phone" dir="ltr">…</b></div>
+    </div>
+
+    <div class="reviews" id="reviews">
+      <h3>⭐ تقييمات الزبائن لمتجري</h3>
+      <div id="reviewsBody">جاري التحميل...</div>
+    </div>
+
+    <div class="msgcard">
+      <h3>💬 رسالة الزبائن</h3>
+      <select id="msgLang">
+        <option value="darija">دارجة جزائرية</option>
+        <option value="arabic">عربية مبسطة</option>
+      </select>
+      <div class="msgprev" id="msgPrev"></div>
+      <div class="hint">هذا ما يصل للزبون: اسم متجرك ورقم هاتفك يُضافان تلقائياً.</div>
+    </div>
+
+    <form id="pwForm">
+      <label for="oldPw">🔑 كلمة السر الحالية</label>
+      <input id="oldPw" type="password" autocomplete="current-password" required>
+      <label for="newPw">🔑 كلمة السر الجديدة (8 أحرف على الأقل)</label>
+      <input id="newPw" type="password" autocomplete="new-password" minlength="8" required>
+      <label for="newPw2">🔑 أعد كتابة كلمة السر الجديدة</label>
+      <input id="newPw2" type="password" autocomplete="new-password" minlength="8" required>
+      <button class="submit" type="submit">تغيير كلمة السر</button>
+      <div class="msg" id="msg" role="alert"></div>
+    </form>
+
+    <button class="logout" type="button" onclick="logout()">🚪 تسجيل الخروج</button>
+  </div>
+</div>
+
+<script src="auth.js"></script>
+<script src="messages.js"></script>
+<script>
+const msg = document.getElementById('msg');
+function say(text, ok) { msg.textContent = text; msg.className = 'msg ' + (ok ? 'ok' : 'err'); }
+
+fetch('/me').then(r => r.json()).then(d => {
+  if (!d.success) return;
+  document.getElementById('shop').textContent = d.shopName;
+  document.getElementById('phone').textContent = d.phone;
+});
+
+function renderPreview() {
+  document.getElementById('msgPrev').textContent = Messages.confirm(Messages.sample());
+}
+document.getElementById('msgLang').value = Messages.lang();
+document.getElementById('msgLang').addEventListener('change', (e) => { Messages.setLang(e.target.value); renderPreview(); });
+Messages.refresh().then(renderPreview);
+renderPreview();
+
+function esc(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, function (ch) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+  });
+}
+
+fetch('/my-rating').then(r => r.json()).then(d => {
+  const body = document.getElementById('reviewsBody');
+  if (!d.success) { body.textContent = 'تعذر التحميل'; return; }
+  if (!d.count) { body.innerHTML = 'لا توجد تقييمات بعد. بعد تسليم كل طلب، اضغط «اطلب تقييم الزبون» في قائمة المعاملات.'; return; }
+
+  let html = '<div><span class="avg">' + esc(d.average) + '</span> / 5 — ' + esc(d.count) + ' تقييم</div>';
+  for (let s = 5; s >= 1; s--) {
+    const n = d.distribution[s] || 0;
+    html += '<div class="dist"><span>' + s + ' ★</span><div class="bar"><i style="width:' + Math.round(n / d.count * 100) + '%"></i></div><span>' + n + '</span></div>';
+  }
+  html += d.shownPublicly
+    ? '<div class="hint">✅ تقييمك ظاهر للزبائن.</div>'
+    : '<div class="hint">يظهر تقييمك للزبائن ابتداءً من ' + esc(d.minPublic) + ' تقييمات (قبل ذلك يظهر «بائع جديد»).</div>';
+  d.recent.forEach(r => {
+    html += '<div class="rev">' + '★'.repeat(r.stars) + '☆'.repeat(5 - r.stars) +
+      (r.comment ? '<div class="c">« ' + esc(r.comment) + ' »</div>' : '') +
+      '<div class="m">' + esc(r.productRef) + ' — ' + esc(new Date(r.at).toLocaleDateString('fr-FR')) + '</div></div>';
+  });
+  body.innerHTML = html;
+}).catch(() => { document.getElementById('reviewsBody').textContent = 'تعذر التحميل'; });
+
+document.getElementById('pwForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const newPassword = document.getElementById('newPw').value;
+  if (newPassword !== document.getElementById('newPw2').value) return say('كلمتا السر غير متطابقتين.', false);
+
+  const button = e.target.querySelector('.submit');
+  button.disabled = true;
+  try {
+    const res = await fetch('/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPassword: document.getElementById('oldPw').value, newPassword })
+    });
+    const data = await res.json();
+    if (data.success) { say('✅ تم تغيير كلمة السر.', true); e.target.reset(); }
+    else say(data.message || 'حدث خطأ', false);
+  } catch {
+    say('تعذر الاتصال بالخادم', false);
+  }
+  button.disabled = false;
+});
+</script>
+</body>
+</html>

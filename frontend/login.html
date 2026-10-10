@@ -1,22 +1,131 @@
 <!DOCTYPE html>
-<html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Confirmi – تسجيل الدخول</title>
+<style>
+body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;}
+.container{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.box{max-width:420px;width:100%;background:#0b1220;border-radius:16px;padding:30px 24px;box-shadow:0 20px 60px rgba(0,0,0,0.4);box-sizing:border-box;}
+.logo{text-align:center;margin-bottom:18px;}
+.logo img{width:200px;max-width:80%;}
+.tabs{display:flex;gap:8px;margin-bottom:20px;}
+.tab{flex:1;padding:11px;border:1px solid #334155;background:#1e293b;color:#cbd5e1;border-radius:10px;cursor:pointer;font-size:15px;}
+.tab.active{background:#22c55e;border-color:#22c55e;color:#022c22;font-weight:bold;}
+label{display:block;font-size:13px;color:#94a3b8;margin:12px 0 5px;}
+input{width:100%;padding:12px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#fff;font-size:15px;box-sizing:border-box;}
+input:focus{outline:none;border-color:#38bdf8;}
+.submit{width:100%;margin-top:18px;padding:14px;background:#22c55e;color:#022c22;border:none;border-radius:10px;font-size:16px;font-weight:bold;cursor:pointer;}
+.submit:disabled{opacity:.5;cursor:default;}
+.error{color:#fca5a5;font-size:13px;min-height:18px;margin-top:12px;text-align:center;}
+.hint{color:#64748b;font-size:12px;margin-top:14px;text-align:center;line-height:1.7;}
+.hidden{display:none;}
+</style>
+</head>
 <body>
-<h2>Connexion vendeur</h2>
-<input id="u" placeholder="Utilisateur">
-<input id="p" type="password" placeholder="Mot de passe">
-<button onclick="go()">Connexion</button>
+<div class="container">
+  <div class="box">
+    <div class="logo"><img src="logo.png" alt="Confirmi"></div>
+
+    <div class="tabs">
+      <button class="tab active" id="tabLogin" type="button">🔐 دخول</button>
+      <button class="tab" id="tabRegister" type="button">✨ حساب جديد</button>
+    </div>
+
+    <form id="loginForm">
+      <label for="lPhone">📞 رقم الهاتف</label>
+      <input id="lPhone" type="tel" inputmode="numeric" autocomplete="username" placeholder="0XXXXXXXXX" required>
+      <label for="lPassword">🔑 كلمة السر</label>
+      <input id="lPassword" type="password" autocomplete="current-password" required>
+      <button class="submit" type="submit">دخول</button>
+    </form>
+
+    <form id="registerForm" class="hidden">
+      <label for="rInvite">🎟️ كود الدعوة</label>
+      <input id="rInvite" type="text" autocapitalize="characters" autocomplete="off" placeholder="XXXX-XXXX" required>
+      <label for="rShop">🏪 اسم المتجر</label>
+      <input id="rShop" type="text" maxlength="60" required>
+      <label for="rPhone">📞 رقم الهاتف</label>
+      <input id="rPhone" type="tel" inputmode="numeric" autocomplete="username" placeholder="0XXXXXXXXX" required>
+      <label for="rPassword">🔑 كلمة السر (8 أحرف على الأقل)</label>
+      <input id="rPassword" type="password" autocomplete="new-password" minlength="8" required>
+      <label for="rPassword2">🔑 أعد كتابة كلمة السر</label>
+      <input id="rPassword2" type="password" autocomplete="new-password" minlength="8" required>
+      <button class="submit" type="submit">إنشاء الحساب</button>
+      <div class="hint">التسجيل بدعوة فقط. إذا لم يكن لديك كود، تواصل مع الإدارة.</div>
+    </form>
+
+    <div class="error" id="error" role="alert"></div>
+  </div>
+</div>
 
 <script>
-async function go(){
-  const res = await fetch("/login",{
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body:JSON.stringify({ username:u.value, password:p.value })
-  });
-  const d = await res.json();
-  if(d.success) location.href="vendeur.html";
-  else alert("Erreur login");
+const errorBox = document.getElementById('error');
+const loginForm = document.getElementById('loginForm');
+const registerForm = document.getElementById('registerForm');
+
+function showTab(which) {
+  const isLogin = which === 'login';
+  loginForm.classList.toggle('hidden', !isLogin);
+  registerForm.classList.toggle('hidden', isLogin);
+  document.getElementById('tabLogin').classList.toggle('active', isLogin);
+  document.getElementById('tabRegister').classList.toggle('active', !isLogin);
+  errorBox.textContent = '';
 }
+document.getElementById('tabLogin').onclick = () => showTab('login');
+document.getElementById('tabRegister').onclick = () => showTab('register');
+
+function enter(data) {
+  localStorage.setItem('sellerId', data.sellerId);
+  localStorage.setItem('shopName', data.shopName || '');
+  localStorage.setItem('shopPhone', data.phone || '');
+  location.replace('index.html');
+}
+
+async function send(url, payload, button) {
+  errorBox.textContent = '';
+  button.disabled = true;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.success) enter(data);
+    else errorBox.textContent = data.message || 'حدث خطأ';
+  } catch {
+    errorBox.textContent = 'تعذر الاتصال بالخادم';
+  }
+  button.disabled = false;
+}
+
+loginForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  send('/login', {
+    phone: document.getElementById('lPhone').value,
+    password: document.getElementById('lPassword').value
+  }, loginForm.querySelector('.submit'));
+});
+
+registerForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const password = document.getElementById('rPassword').value;
+  if (password !== document.getElementById('rPassword2').value) {
+    errorBox.textContent = 'كلمتا السر غير متطابقتين.';
+    return;
+  }
+  send('/register', {
+    inviteCode: document.getElementById('rInvite').value,
+    shopName: document.getElementById('rShop').value,
+    phone: document.getElementById('rPhone').value,
+    password
+  }, registerForm.querySelector('.submit'));
+});
+
+// Déjà connecté (cookie valide) : on rafraîchit les infos locales et on entre directement
+fetch('/me').then(r => r.ok ? r.json() : null).then(d => { if (d && d.success) enter(d); }).catch(() => {});
 </script>
 </body>
 </html>
