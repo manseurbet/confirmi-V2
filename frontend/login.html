@@ -42,8 +42,10 @@ input:focus{outline:none;border-color:#38bdf8;}
     </form>
 
     <form id="registerForm" class="hidden">
-      <label for="rInvite">🎟️ كود الدعوة</label>
-      <input id="rInvite" type="text" autocapitalize="characters" autocomplete="off" placeholder="XXXX-XXXX" required>
+      <div id="inviteRow">
+        <label for="rInvite">🎟️ كود الدعوة</label>
+        <input id="rInvite" type="text" autocapitalize="characters" autocomplete="off" placeholder="XXXX-XXXX" required>
+      </div>
       <label for="rShop">🏪 اسم المتجر</label>
       <input id="rShop" type="text" maxlength="60" required>
       <label for="rPhone">📞 رقم الهاتف</label>
@@ -53,7 +55,7 @@ input:focus{outline:none;border-color:#38bdf8;}
       <label for="rPassword2">🔑 أعد كتابة كلمة السر</label>
       <input id="rPassword2" type="password" autocomplete="new-password" minlength="8" required>
       <button class="submit" type="submit">إنشاء الحساب</button>
-      <div class="hint">التسجيل بدعوة فقط. إذا لم يكن لديك كود، تواصل مع الإدارة.</div>
+      <div class="hint" id="inviteHint">التسجيل بدعوة فقط. إذا لم يكن لديك كود، تواصل مع الإدارة.</div>
     </form>
 
     <div class="error" id="error" role="alert"></div>
@@ -123,6 +125,15 @@ registerForm.addEventListener('submit', (e) => {
     password
   }, registerForm.querySelector('.submit'));
 });
+
+// Inscription ouverte (INVITE_REQUIRED=0 côté serveur) : plus de code à saisir
+fetch('/config').then(r => r.json()).then(c => {
+  if (c && c.success && c.inviteRequired === false) {
+    document.getElementById('inviteRow').classList.add('hidden');
+    document.getElementById('inviteHint').classList.add('hidden');
+    document.getElementById('rInvite').required = false;
+  }
+}).catch(() => {});
 
 // Déjà connecté (cookie valide) : on rafraîchit les infos locales et on entre directement
 fetch('/me').then(r => r.ok ? r.json() : null).then(d => { if (d && d.success) enter(d); }).catch(() => {});
