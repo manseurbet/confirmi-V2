@@ -1,2 +1,13 @@
 transactions.json
 uploads/
+
+users.json
+sessions.json
+invites.json
+transactions.json
+scores.json
+audit.json
+uploads/
+backup-donnees/
+*.backup
+.env
