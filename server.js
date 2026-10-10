@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const multer = require("multer");
+const bcrypt = require("bcryptjs");
 const { normalizeClientPhone } = require("./phone");
 
 const app = express();
@@ -34,6 +35,11 @@ const OUTCOME_REASONS = {
 };
 // Le vendeur peut corriger une erreur de clic pendant 24 h, ensuite le résultat est verrouillé.
 const OUTCOME_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// Note du vendeur par ses acheteurs : visible publiquement à partir de ce nombre d'avis (avant : « بائع جديد »)
+const MIN_RATINGS_PUBLIC = 3;
+// L'acheteur peut noter pendant 30 jours après l'enregistrement de la livraison
+const RATING_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 const TRANSACTION_ID_RE = /^[a-f0-9]{32}$/;       // jeton aléatoire de 128 bits
 // Liste blanche : « seller_ » + caractères alphanumériques (ancien format : 9, nouveau : 32),
@@ -101,7 +107,8 @@ const scoreBatchLimiter = rateLimit({
     return Array.isArray(phones) ? Math.min(Math.max(phones.length, 1), 1000) : 1;
   },
 });
-const adminLimiter = rateLimit({ windowMs: 60 * 1000, max: 10 });
+const adminLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
+const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 20 }); // connexion / inscription / mot de passe (par IP)
 const outcomeLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
 
 /* ------------------------------------------------------------------ */
@@ -268,9 +275,28 @@ function maskPhone(phone) {
   return local.slice(0, 4) + "***" + local.slice(-3);
 }
 
+// Notes reçues par un vendeur : seuls les avis sur des commandes réellement livrées comptent
+function ratingSummary(transactions, sellerId) {
+  const rated = transactions.filter(
+    (t) => t.sellerId === sellerId && t.rating && t.outcome && t.outcome.status === "delivered"
+  );
+  const count = rated.length;
+  const sum = rated.reduce((s, t) => s + t.rating.stars, 0);
+  return { count, average: count ? Math.round((sum / count) * 10) / 10 : null, rated };
+}
+
 // Ce que voit le CLIENT : jamais le sellerId ni le numéro complet.
-function publicTransaction(t) {
+function publicTransaction(t, shopName, vendorRating) {
+  const delivered = !!(t.outcome && t.outcome.status === "delivered");
   return {
+    shopName: shopName || "",
+    vendorRating: {
+      count: vendorRating ? vendorRating.count : 0,
+      average: vendorRating ? vendorRating.average : null,
+      shown: !!vendorRating && vendorRating.count >= MIN_RATINGS_PUBLIC,
+    },
+    delivered,
+    rated: !!t.rating,
     clientName: t.clientName,
     clientPhone: maskPhone(t.clientPhone),
     productRef: t.productRef,
@@ -305,10 +331,363 @@ function requireAdmin(req, res, next) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Comptes vendeurs, sessions, invitations                             */
+/* ------------------------------------------------------------------ */
+
+const usersFile = path.join(__dirname, "users.json");
+const sessionsFile = path.join(__dirname, "sessions.json");
+const invitesFile = path.join(__dirname, "invites.json");
+ensureFile(usersFile, []);
+ensureFile(sessionsFile, {});
+ensureFile(invitesFile, []);
+
+const SESSION_COOKIE = "confirmi_session";
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 jours
+const INVITE_TTL_MS = 14 * 24 * 60 * 60 * 1000;    // 14 jours
+const PASSWORD_MIN = 8;
+const LOGIN_MAX_FAILS = 5;                         // essais ratés avant blocage du numéro
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // sans I, L, O, 0, 1 (faciles à confondre)
+
+// Faux hash : on fait toujours un bcrypt.compare, même si le numéro n'existe pas (temps de réponse identique)
+const DUMMY_HASH = bcrypt.hashSync("confirmi-dummy-password", 10);
+
+const sha256hex = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
+
+function readUsers() {
+  const users = readJson(usersFile);
+  return Array.isArray(users) ? users : [];
+}
+
+function randomFromAlphabet(length) {
+  let out = "";
+  for (let i = 0; i < length; i++) out += CODE_ALPHABET[crypto.randomInt(0, CODE_ALPHABET.length)];
+  return out;
+}
+
+function localPhone(p) {
+  return /^213\d{9}$/.test(String(p)) ? "0" + String(p).slice(3) : String(p || "");
+}
+
+function validPassword(password) {
+  return typeof password === "string" && password.length >= PASSWORD_MIN && Buffer.byteLength(password) <= 72;
+}
+const PASSWORD_MESSAGE = `كلمة السر يجب أن تحتوي على ${PASSWORD_MIN} أحرف على الأقل.`;
+
+/* --- cookies et sessions --- */
+
+function parseCookies(req) {
+  const out = Object.create(null);
+  String(req.headers.cookie || "").split(";").forEach((part) => {
+    const i = part.indexOf("=");
+    if (i <= 0) return;
+    try { out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim()); } catch { /* cookie mal formé : ignoré */ }
+  });
+  return out;
+}
+
+function setSessionCookie(req, res, value, maxAgeMs) {
+  const parts = [`${SESSION_COOKIE}=${value}`, "Path=/", "HttpOnly", "SameSite=Lax", `Max-Age=${Math.floor(maxAgeMs / 1000)}`];
+  if (req.secure) parts.push("Secure");
+  res.append("Set-Cookie", parts.join("; "));
+}
+
+// On ne garde que l'empreinte du jeton : un vol du fichier sessions.json ne donne aucune session utilisable
+function createSession(req, res, sellerId) {
+  const token = crypto.randomBytes(32).toString("hex");
+  const sessions = readJson(sessionsFile);
+  const now = Date.now();
+  for (const key of Object.keys(sessions)) if (sessions[key].expiresAt <= now) delete sessions[key];
+  sessions[sha256hex(token)] = { sellerId, createdAt: now, expiresAt: now + SESSION_TTL_MS };
+  writeJson(sessionsFile, sessions);
+  setSessionCookie(req, res, token, SESSION_TTL_MS);
+}
+
+function revokeSessions(sellerId, exceptHash) {
+  const sessions = readJson(sessionsFile);
+  let changed = false;
+  for (const key of Object.keys(sessions)) {
+    if (sessions[key].sellerId === sellerId && key !== exceptHash) { delete sessions[key]; changed = true; }
+  }
+  if (changed) writeJson(sessionsFile, sessions);
+}
+
+// Place req.sellerId (le SEUL identifiant vendeur auquel on fait confiance) ou répond 401
+function requireSeller(req, res, next) {
+  const unauthorized = () => res.status(401).json({ success: false, message: "يجب تسجيل الدخول." });
+  const token = parseCookies(req)[SESSION_COOKIE];
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) return unauthorized();
+
+  const hash = sha256hex(token);
+  const sessions = readJson(sessionsFile);
+  const session = Object.hasOwn(sessions, hash) ? sessions[hash] : null;
+  if (!session || session.expiresAt <= Date.now()) return unauthorized();
+
+  const user = readUsers().find((u) => u.sellerId === session.sellerId);
+  if (!user || user.status === "disabled") return unauthorized();
+
+  req.sellerId = user.sellerId;
+  req.user = user;
+  req.sessionHash = hash;
+  next();
+}
+
+/* --- blocage après trop d'essais ratés (par numéro) --- */
+
+const loginFails = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, f] of loginFails) if (f.until <= now && f.resetAt <= now) loginFails.delete(key);
+}, 60 * 1000).unref();
+
+function lockedMinutes(key) {
+  const f = loginFails.get(key);
+  return f && f.until > Date.now() ? Math.ceil((f.until - Date.now()) / 60000) : 0;
+}
+function registerFail(key) {
+  const now = Date.now();
+  let f = loginFails.get(key);
+  if (!f || (f.until <= now && f.resetAt <= now)) f = { count: 0, until: 0, resetAt: now + LOGIN_LOCK_MS };
+  f.count++;
+  if (f.count >= LOGIN_MAX_FAILS) { f.until = now + LOGIN_LOCK_MS; f.resetAt = f.until; f.count = 0; }
+  loginFails.set(key, f);
+}
+
+/* --- inscription (sur invitation), connexion, déconnexion --- */
+
+// Corps JSON : { inviteCode, phone, shopName, password }
+app.post("/register", authLimiter, async (req, res) => {
+  const body = req.body || {};
+  const fail = (status, message) => res.status(status).json({ success: false, message });
+
+  const phone = normalizeClientPhone(typeof body.phone === "string" ? body.phone : "");
+  if (!phone) return fail(400, "رقم الهاتف غير صالح (05 أو 06 أو 07 متبوعا بـ 8 أرقام).");
+  const shopName = clip(body.shopName, 60);
+  if (shopName.length < 2) return fail(400, "اسم المتجر مطلوب.");
+  if (!validPassword(body.password)) return fail(400, PASSWORD_MESSAGE);
+  const code = String(body.inviteCode || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (code.length !== 8) return fail(400, "كود الدعوة غير صالح.");
+
+  const passwordHash = await bcrypt.hash(body.password, 10);
+
+  // Tout ce qui suit est synchrone : pas de course entre deux inscriptions simultanées
+  const invites = readJson(invitesFile);
+  const invite = invites.find((i) => i.hash === sha256hex(code));
+  if (!invite || invite.usedAt || Date.parse(invite.expiresAt) < Date.now()) {
+    return fail(400, "كود الدعوة غير صالح أو منتهي الصلاحية.");
+  }
+
+  const users = readUsers();
+  if (users.some((u) => u.phone === phone)) return fail(409, "هذا الرقم مسجل مسبقا، سجّل الدخول.");
+
+  let sellerId = "seller_" + crypto.randomBytes(16).toString("hex");
+  if (invite.sellerId) {                       // invitation liée à d'anciennes données (période de test)
+    if (users.some((u) => u.sellerId === invite.sellerId)) return fail(409, "هذا المعرّف القديم مرتبط بحساب آخر.");
+    sellerId = invite.sellerId;
+  }
+
+  users.push({ sellerId, phone, shopName, passwordHash, status: "active", createdAt: new Date().toISOString(), lastLoginAt: null });
+  invite.usedAt = new Date().toISOString();
+  invite.usedBy = sellerId;
+  writeJson(usersFile, users);
+  writeJson(invitesFile, invites);
+
+  createSession(req, res, sellerId);
+  res.json({ success: true, sellerId, shopName, phone: localPhone(phone) });
+});
+
+// Corps JSON : { phone, password }
+app.post("/login", authLimiter, async (req, res) => {
+  const { phone: rawPhone, password } = req.body || {};
+  const generic = () => res.status(401).json({ success: false, message: "رقم الهاتف أو كلمة السر غير صحيحة." });
+
+  const phone = normalizeClientPhone(typeof rawPhone === "string" ? rawPhone : "");
+  if (!phone || typeof password !== "string" || password.length > 200) return generic();
+
+  const minutes = lockedMinutes(phone);
+  if (minutes) return res.status(429).json({ success: false, message: `محاولات كثيرة، أعد المحاولة بعد ${minutes} دقيقة.` });
+
+  const user = readUsers().find((u) => u.phone === phone);
+  const passwordOk = await bcrypt.compare(password, user ? user.passwordHash : DUMMY_HASH);
+  if (!user || !passwordOk) { registerFail(phone); return generic(); }
+  if (user.status === "disabled") return res.status(403).json({ success: false, message: "الحساب موقوف، تواصل مع الإدارة." });
+
+  loginFails.delete(phone);
+  const users = readUsers();
+  const current = users.find((u) => u.sellerId === user.sellerId);
+  if (current) { current.lastLoginAt = new Date().toISOString(); writeJson(usersFile, users); }
+
+  createSession(req, res, user.sellerId);
+  res.json({ success: true, sellerId: user.sellerId, shopName: user.shopName, phone: localPhone(user.phone) });
+});
+
+app.post("/logout", (req, res) => {
+  const token = parseCookies(req)[SESSION_COOKIE];
+  if (token && /^[a-f0-9]{64}$/.test(token)) {
+    const sessions = readJson(sessionsFile);
+    const hash = sha256hex(token);
+    if (Object.hasOwn(sessions, hash)) { delete sessions[hash]; writeJson(sessionsFile, sessions); }
+  }
+  setSessionCookie(req, res, "", 0);
+  res.json({ success: true });
+});
+
+app.get("/me", requireSeller, (req, res) => {
+  const { count, average } = ratingSummary(readJson(transactionsFile), req.sellerId);
+  res.json({
+    success: true,
+    sellerId: req.user.sellerId,
+    shopName: req.user.shopName,
+    phone: localPhone(req.user.phone),
+    rating: { count, average },
+  });
+});
+
+// Les avis reçus par le vendeur connecté (les commentaires ne sont visibles que par lui)
+app.get("/my-rating", requireSeller, (req, res) => {
+  const { count, average, rated } = ratingSummary(readJson(transactionsFile), req.sellerId);
+  const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  rated.forEach((t) => { distribution[t.rating.stars]++; });
+  const recent = rated
+    .slice()
+    .sort((a, b) => Date.parse(b.rating.at) - Date.parse(a.rating.at))
+    .slice(0, 10)
+    .map((t) => ({ stars: t.rating.stars, comment: t.rating.comment || "", at: t.rating.at, productRef: t.productRef }));
+  res.json({ success: true, count, average, minPublic: MIN_RATINGS_PUBLIC, shownPublicly: count >= MIN_RATINGS_PUBLIC, distribution, recent });
+});
+
+// Corps JSON : { oldPassword, newPassword } ; les autres appareils sont déconnectés
+app.post("/change-password", requireSeller, authLimiter, async (req, res) => {
+  const { oldPassword, newPassword } = req.body || {};
+  const fail = (status, message) => res.status(status).json({ success: false, message });
+
+  if (!validPassword(newPassword)) return fail(400, PASSWORD_MESSAGE);
+  if (typeof oldPassword !== "string" || oldPassword.length > 200) return fail(400, "كلمة السر الحالية غير صحيحة.");
+
+  const minutes = lockedMinutes(req.user.phone);
+  if (minutes) return fail(429, `محاولات كثيرة، أعد المحاولة بعد ${minutes} دقيقة.`);
+  if (!(await bcrypt.compare(oldPassword, req.user.passwordHash))) {
+    registerFail(req.user.phone);
+    return fail(400, "كلمة السر الحالية غير صحيحة.");
+  }
+
+  const newHash = await bcrypt.hash(newPassword, 10);
+  const users = readUsers();
+  const current = users.find((u) => u.sellerId === req.sellerId);
+  if (!current) return fail(404, "الحساب غير موجود.");
+  current.passwordHash = newHash;
+  writeJson(usersFile, users);
+  revokeSessions(req.sellerId, req.sessionHash);
+  res.json({ success: true });
+});
+
+/* --- administration des comptes (protégée par ADMIN_TOKEN) --- */
+
+// Corps JSON : { note?, legacySellerId? } -> le code n'est montré qu'une fois (seule son empreinte est gardée)
+app.post("/admin/invites", adminLimiter, requireAdmin, (req, res) => {
+  const body = req.body || {};
+  let legacySellerId;
+  if (body.legacySellerId) {
+    legacySellerId = String(body.legacySellerId);
+    if (!SELLER_ID_RE.test(legacySellerId)) {
+      return res.status(400).json({ success: false, message: "Ancien identifiant vendeur invalide." });
+    }
+    if (readUsers().some((u) => u.sellerId === legacySellerId)) {
+      return res.status(409).json({ success: false, message: "Cet ancien identifiant est déjà lié à un compte." });
+    }
+    if (!readJson(transactionsFile).some((t) => t.sellerId === legacySellerId)) {
+      return res.status(404).json({ success: false, message: "Aucune transaction avec cet identifiant." });
+    }
+  }
+
+  const raw = randomFromAlphabet(8);
+  const invites = readJson(invitesFile);
+  invites.push({
+    id: crypto.randomBytes(4).toString("hex"),
+    hash: sha256hex(raw),
+    note: clip(body.note, 80),
+    sellerId: legacySellerId,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + INVITE_TTL_MS).toISOString(),
+    usedAt: null,
+    usedBy: null,
+  });
+  writeJson(invitesFile, invites);
+
+  res.json({ success: true, code: raw.slice(0, 4) + "-" + raw.slice(4), expiresAt: invites[invites.length - 1].expiresAt });
+});
+
+app.get("/admin/invites", adminLimiter, requireAdmin, (req, res) => {
+  const users = readUsers();
+  const now = Date.now();
+  const list = readJson(invitesFile).map((i) => {
+    const owner = i.usedBy ? users.find((u) => u.sellerId === i.usedBy) : null;
+    return {
+      id: i.id,
+      note: i.note,
+      linkedToOldData: !!i.sellerId,
+      createdAt: i.createdAt,
+      expiresAt: i.expiresAt,
+      status: i.usedAt ? "used" : Date.parse(i.expiresAt) < now ? "expired" : "active",
+      usedBy: owner ? owner.shopName : null,
+    };
+  });
+  res.json({ success: true, invites: list.reverse() });
+});
+
+app.get("/admin/users", adminLimiter, requireAdmin, (req, res) => {
+  const transactions = readJson(transactionsFile);
+  const list = readUsers().map((u) => ({
+    sellerId: u.sellerId,
+    shopName: u.shopName,
+    phone: localPhone(u.phone),
+    status: u.status || "active",
+    createdAt: u.createdAt,
+    lastLoginAt: u.lastLoginAt,
+    transactions: transactions.filter((t) => t.sellerId === u.sellerId).length,
+    rating: (() => { const r = ratingSummary(transactions, u.sellerId); return { count: r.count, average: r.average }; })(),
+  }));
+  res.json({ success: true, users: list });
+});
+
+// Corps JSON : { status: "active" | "disabled" } ; un compte suspendu est déconnecté immédiatement
+app.post("/admin/users/:sellerId/status", adminLimiter, requireAdmin, (req, res) => {
+  const status = (req.body || {}).status;
+  if (status !== "active" && status !== "disabled") {
+    return res.status(400).json({ success: false, message: "Statut invalide." });
+  }
+  const users = readUsers();
+  const user = SELLER_ID_RE.test(req.params.sellerId) ? users.find((u) => u.sellerId === req.params.sellerId) : null;
+  if (!user) return res.status(404).json({ success: false, message: "Vendeur introuvable." });
+
+  user.status = status;
+  writeJson(usersFile, users);
+  if (status === "disabled") revokeSessions(user.sellerId);
+  res.json({ success: true, status });
+});
+
+// Mot de passe oublié : l'admin génère un mot de passe provisoire (affiché une seule fois) et le donne au vendeur
+app.post("/admin/users/:sellerId/reset-password", adminLimiter, requireAdmin, async (req, res) => {
+  if (!SELLER_ID_RE.test(req.params.sellerId)) return res.status(404).json({ success: false, message: "Vendeur introuvable." });
+  const temporary = randomFromAlphabet(10);
+  const hash = await bcrypt.hash(temporary, 10);
+
+  const users = readUsers();
+  const user = users.find((u) => u.sellerId === req.params.sellerId);
+  if (!user) return res.status(404).json({ success: false, message: "Vendeur introuvable." });
+
+  user.passwordHash = hash;
+  writeJson(usersFile, users);
+  revokeSessions(user.sellerId);
+  loginFails.delete(user.phone);
+  res.json({ success: true, password: temporary });
+});
+
+/* ------------------------------------------------------------------ */
 /* Routes                                                              */
 /* ------------------------------------------------------------------ */
 
-app.get("/score/client/:phone", scoreLimiter, (req, res) => {
+app.get("/score/client/:phone", requireSeller, scoreLimiter, (req, res) => {
   const clientPhone = normalizeClientPhone(req.params.phone);
   if (!clientPhone) {
     return res.status(400).json({ success: false, message: INVALID_PHONE_MESSAGE });
@@ -321,7 +700,7 @@ app.get("/score/client/:phone", scoreLimiter, (req, res) => {
 
 // Corps JSON : { phones: ["0556001122", "+213661223344", ...] } (200 numéros maximum)
 // Réponse : results[i] correspond à phones[i]
-app.post("/score/clients", scoreBatchLimiter, (req, res) => {
+app.post("/score/clients", requireSeller, scoreBatchLimiter, (req, res) => {
   const phones = req.body && req.body.phones;
   if (!Array.isArray(phones) || phones.length === 0 || phones.length > MAX_BATCH_PHONES) {
     return res.status(400).json({ success: false, message: "Liste de numéros invalide (1 à 200 numéros)." });
@@ -336,20 +715,17 @@ app.post("/score/clients", scoreBatchLimiter, (req, res) => {
   res.json({ success: true, results });
 });
 
-app.post("/create-confirmation", uploadSingle("productPhoto"), (req, res) => {
-  const { clientPhone: rawClientPhone, sellerId } = req.body;
+app.post("/create-confirmation", requireSeller, uploadSingle("productPhoto"), (req, res) => {
+  const rawClientPhone = req.body.clientPhone;
+  const sellerId = req.sellerId; // vient de la session, jamais du formulaire
   const clientName = clip(req.body.clientName, 100);
   const productRef = clip(req.body.productRef, 200);
   const description = clip(req.body.description, 500);
   const amount = Number(req.body.amount);
 
-  if (!clientName || !rawClientPhone || !productRef || !req.body.amount || !sellerId) {
+  if (!clientName || !rawClientPhone || !productRef || !req.body.amount) {
     discardUpload(req);
     return res.status(400).json({ success: false, message: "Champs obligatoires manquants." });
-  }
-  if (typeof sellerId !== "string" || !SELLER_ID_RE.test(sellerId)) {
-    discardUpload(req);
-    return res.status(400).json({ success: false, message: "Identifiant vendeur invalide." });
   }
   if (!Number.isFinite(amount) || amount <= 0 || amount > 100000000) {
     discardUpload(req);
@@ -396,7 +772,37 @@ app.get("/transaction/:id", publicLinkLimiter, (req, res) => {
   const transactions = readJson(transactionsFile);
   const t = transactions.find((x) => x.transactionId === req.params.id);
   if (!t) return res.json({ success: false });
-  res.json({ success: true, transaction: publicTransaction(t) });
+  const owner = readUsers().find((u) => u.sellerId === t.sellerId);
+  const vendorRating = ratingSummary(transactions, t.sellerId);
+  res.json({ success: true, transaction: publicTransaction(t, owner ? owner.shopName : "", vendorRating) });
+});
+
+// L'acheteur note le vendeur avec le même lien, une fois la livraison enregistrée.
+// Corps JSON : { stars: 1..5, comment?: "…" } ; un seul avis par commande.
+app.post("/rate-transaction/:id", publicLinkLimiter, (req, res) => {
+  const invalidLink = () => res.json({ success: false, message: "الرابط غير صالح." });
+  if (!TRANSACTION_ID_RE.test(req.params.id)) return invalidLink();
+
+  const stars = Number((req.body || {}).stars);
+  if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
+    return res.status(400).json({ success: false, message: "اختر عدد النجوم من 1 إلى 5." });
+  }
+  const comment = clip((req.body || {}).comment, 200);
+
+  const transactions = readJson(transactionsFile);
+  const t = transactions.find((x) => x.transactionId === req.params.id);
+  if (!t) return invalidLink();
+  if (!t.outcome || t.outcome.status !== "delivered") {
+    return res.json({ success: false, message: "التقييم متاح بعد تسليم الطلب." });
+  }
+  if (t.rating) return res.json({ success: false, message: "لقد قمت بتقييم هذا الطلب مسبقا." });
+  if (Date.now() - Date.parse(t.outcome.at) > RATING_WINDOW_MS) {
+    return res.json({ success: false, message: "انتهت مدة التقييم." });
+  }
+
+  t.rating = { stars, comment, at: new Date().toISOString() };
+  writeJson(transactionsFile, transactions);
+  res.json({ success: true });
 });
 
 // Vérifie le lien AVANT de laisser multer écrire un fichier sur le disque
@@ -479,9 +885,10 @@ function outcomeView(outcome) {
 
 // Corps JSON : { sellerId, status: "delivered" | "returned", reason? }
 // Seul le vendeur de la commande peut enregistrer le résultat.
-app.post("/transaction/:id/outcome", outcomeLimiter, (req, res) => {
+app.post("/transaction/:id/outcome", requireSeller, outcomeLimiter, (req, res) => {
   const id = req.params.id;
-  const { sellerId, status } = req.body || {};
+  const sellerId = req.sellerId;
+  const status = (req.body || {}).status;
   const badRequest = (message) => res.status(400).json({ success: false, message });
 
   if (!TRANSACTION_ID_RE.test(id) || typeof sellerId !== "string" || !SELLER_ID_RE.test(sellerId)) {
@@ -553,8 +960,8 @@ function callsSummary(t) {
 //  - « no_response » : lien envoyé, jamais confirmé ni refusé, depuis au moins `hours` heures
 //  - « risky »       : client dont la note est « غير موثوق » (commande pas encore livrée)
 // Query : ?hours=3 (1 à 168). Une commande déjà reconfirmée par téléphone n'est plus listée au titre du risque.
-app.get("/call-list/:sellerId", (req, res) => {
-  const sellerId = req.params.sellerId;
+app.get("/call-list/:sellerId", requireSeller, (req, res) => {
+  const sellerId = req.sellerId; // l'identifiant de l'URL est ignoré : seule la session compte
   const hours = Math.min(Math.max(Number(req.query.hours) || NO_RESPONSE_DEFAULT_HOURS, 1), 168);
   if (!SELLER_ID_RE.test(sellerId)) return res.json({ success: true, hours, items: [] });
 
@@ -599,9 +1006,10 @@ app.get("/call-list/:sellerId", (req, res) => {
 });
 
 // Corps JSON : { sellerId, result: "confirmed" | "refused" | "no_answer" | "call_later" }
-app.post("/transaction/:id/call", outcomeLimiter, (req, res) => {
+app.post("/transaction/:id/call", requireSeller, outcomeLimiter, (req, res) => {
   const id = req.params.id;
-  const { sellerId, result } = req.body || {};
+  const sellerId = req.sellerId;
+  const result = (req.body || {}).result;
 
   if (!TRANSACTION_ID_RE.test(id) || typeof sellerId !== "string" || !SELLER_ID_RE.test(sellerId)) {
     return res.status(400).json({ success: false, message: "طلب غير صالح." });
@@ -642,18 +1050,17 @@ app.post("/transaction/:id/call", outcomeLimiter, (req, res) => {
 });
 
 // NB : tant qu'il n'y a pas de vraie connexion vendeur, le sellerId joue le rôle de mot de passe.
-app.get("/transactions/:sellerId", (req, res) => {
-  if (!SELLER_ID_RE.test(req.params.sellerId)) return res.json({ success: true, transactions: [] });
+app.get("/transactions/:sellerId", requireSeller, (req, res) => {
   const transactions = readJson(transactionsFile)
-    .filter((t) => t.sellerId === req.params.sellerId)
+    .filter((t) => t.sellerId === req.sellerId)
     .map((t) => ({ ...t, outcome: outcomeView(t.outcome) }));
   res.json({ success: true, transactions });
 });
 
-app.get("/admin/dashboard/:sellerId", (req, res) => {
-  const sellerId = req.params.sellerId;
+app.get("/admin/dashboard/:sellerId", requireSeller, (req, res) => {
+  const sellerId = req.sellerId;
   if (!SELLER_ID_RE.test(sellerId)) {
-    return res.json({ success: true, stats: { total: 0, confirmed: 0, delivered: 0, returned: 0, awaiting: 0 }, clients: {}, transactions: [] });
+    return res.json({ success: true, stats: { total: 0, confirmed: 0, delivered: 0, returned: 0, awaiting: 0, refused: 0, pending: 0 }, clients: {}, transactions: [] });
   }
 
   const transactions = readJson(transactionsFile).filter((t) => t.sellerId === sellerId);
@@ -661,6 +1068,8 @@ app.get("/admin/dashboard/:sellerId", (req, res) => {
   const delivered = transactions.filter((t) => t.outcome && t.outcome.status === "delivered").length;
   const returned = transactions.filter((t) => t.outcome && t.outcome.status === "returned").length;
   const awaiting = transactions.filter((t) => t.confirmed && !t.outcome).length;
+  const refused = transactions.filter((t) => t.refused).length;
+  const pending = transactions.filter((t) => !t.confirmed && !t.refused && !t.outcome).length;
   const sellerScores = scores.vendeurs[sellerId] || { clients: {} };
   const clients = {};
   for (const phone in sellerScores.clients) {
@@ -675,7 +1084,7 @@ app.get("/admin/dashboard/:sellerId", (req, res) => {
   }
   res.json({
     success: true,
-    stats: { total: transactions.length, confirmed: transactions.filter((t) => t.confirmed).length, delivered, returned, awaiting },
+    stats: { total: transactions.length, confirmed: transactions.filter((t) => t.confirmed).length, delivered, returned, awaiting, refused, pending },
     clients,
     transactions: transactions.map((t) => ({ ...t, outcome: outcomeView(t.outcome) })),
   });

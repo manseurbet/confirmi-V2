@@ -1,0 +1,12 @@
+# À ajouter dans le fichier .gitignore AVANT de créer les premiers comptes vendeurs.
+# Ces fichiers contiennent des comptes, des sessions et des numéros de clients : ils ne doivent pas aller sur GitHub.
+users.json
+sessions.json
+invites.json
+transactions.json
+scores.json
+audit.json
+uploads/
+node_modules/
+.agents/
+.env
