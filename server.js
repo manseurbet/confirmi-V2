@@ -344,6 +344,12 @@ ensureFile(invitesFile, []);
 const SESSION_COOKIE = "confirmi_session";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 jours
 const INVITE_TTL_MS = 14 * 24 * 60 * 60 * 1000;    // 14 jours
+// Inscription sur invitation (par défaut). Pour l'ouvrir pendant les essais : Replit > Secrets > INVITE_REQUIRED = 0
+// (le système d'invitation reste en place : supprimez la variable pour le réactiver).
+const INVITE_REQUIRED = process.env.INVITE_REQUIRED !== "0";
+if (!INVITE_REQUIRED) {
+  console.warn("⚠️  Inscription OUVERTE (INVITE_REQUIRED=0) : n'importe qui ayant l'adresse peut créer un compte vendeur.");
+}
 const PASSWORD_MIN = 8;
 const LOGIN_MAX_FAILS = 5;                         // essais ratés avant blocage du numéro
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
@@ -455,7 +461,12 @@ function registerFail(key) {
 
 /* --- inscription (sur invitation), connexion, déconnexion --- */
 
-// Corps JSON : { inviteCode, phone, shopName, password }
+// Réglages publics lus par la page de connexion (aucun secret : seulement des booléens)
+app.get("/config", (req, res) => {
+  res.json({ success: true, inviteRequired: INVITE_REQUIRED });
+});
+
+// Corps JSON : { inviteCode?, phone, shopName, password } ; le code est facultatif si INVITE_REQUIRED=0
 app.post("/register", authLimiter, async (req, res) => {
   const body = req.body || {};
   const fail = (status, message) => res.status(status).json({ success: false, message });
@@ -466,31 +477,37 @@ app.post("/register", authLimiter, async (req, res) => {
   if (shopName.length < 2) return fail(400, "اسم المتجر مطلوب.");
   if (!validPassword(body.password)) return fail(400, PASSWORD_MESSAGE);
   const code = String(body.inviteCode || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (code.length !== 8) return fail(400, "كود الدعوة غير صالح.");
+  const useInvite = INVITE_REQUIRED || code.length > 0;   // un code fourni est toujours vérifié (et consommé)
+  if (useInvite && code.length !== 8) return fail(400, "كود الدعوة غير صالح.");
 
   const passwordHash = await bcrypt.hash(body.password, 10);
 
   // Tout ce qui suit est synchrone : pas de course entre deux inscriptions simultanées
   const invites = readJson(invitesFile);
-  const invite = invites.find((i) => i.hash === sha256hex(code));
-  if (!invite || invite.usedAt || Date.parse(invite.expiresAt) < Date.now()) {
-    return fail(400, "كود الدعوة غير صالح أو منتهي الصلاحية.");
+  let invite = null;
+  if (useInvite) {
+    invite = invites.find((i) => i.hash === sha256hex(code));
+    if (!invite || invite.usedAt || Date.parse(invite.expiresAt) < Date.now()) {
+      return fail(400, "كود الدعوة غير صالح أو منتهي الصلاحية.");
+    }
   }
 
   const users = readUsers();
   if (users.some((u) => u.phone === phone)) return fail(409, "هذا الرقم مسجل مسبقا، سجّل الدخول.");
 
   let sellerId = "seller_" + crypto.randomBytes(16).toString("hex");
-  if (invite.sellerId) {                       // invitation liée à d'anciennes données (période de test)
+  if (invite && invite.sellerId) {             // invitation liée à d'anciennes données (période de test)
     if (users.some((u) => u.sellerId === invite.sellerId)) return fail(409, "هذا المعرّف القديم مرتبط بحساب آخر.");
     sellerId = invite.sellerId;
   }
 
   users.push({ sellerId, phone, shopName, passwordHash, status: "active", createdAt: new Date().toISOString(), lastLoginAt: null });
-  invite.usedAt = new Date().toISOString();
-  invite.usedBy = sellerId;
+  if (invite) {
+    invite.usedAt = new Date().toISOString();
+    invite.usedBy = sellerId;
+    writeJson(invitesFile, invites);
+  }
   writeJson(usersFile, users);
-  writeJson(invitesFile, invites);
 
   createSession(req, res, sellerId);
   res.json({ success: true, sellerId, shopName, phone: localPhone(phone) });
