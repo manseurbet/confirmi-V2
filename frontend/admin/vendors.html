@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmi – إدارة البائعين</title>
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #fff; padding: 20px; text-align: right; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        h1 { text-align: center; color: #38bdf8; margin-bottom: 24px; }
+        h2 { color: #38bdf8; font-size: 18px; margin: 0 0 14px; }
+        .btn-back { background: #334155; color: white; text-decoration: none; padding: 10px 20px; border-radius: 8px; display: inline-block; margin-bottom: 20px; }
+        .panel { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 18px; margin-bottom: 22px; overflow-x: auto; }
+        .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+        .field { flex: 1; min-width: 180px; }
+        label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 5px; }
+        input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 14px; box-sizing: border-box; }
+        button { padding: 10px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; }
+        .primary { background: #22c55e; color: #022c22; }
+        .small { padding: 6px 10px; font-size: 12px; background: #334155; color: #fff; margin-left: 4px; }
+        .danger { background: #7f1d1d; color: #fecaca; }
+        table { width: 100%; border-collapse: collapse; min-width: 640px; }
+        th, td { padding: 10px 12px; text-align: right; border-bottom: 1px solid #334155; font-size: 13px; }
+        th { background: #0f172a; color: #94a3b8; font-weight: 500; }
+        .badge { padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+        .b-ok { background: rgba(34,197,94,.2); color: #4ade80; }
+        .b-warn { background: rgba(251,191,36,.2); color: #fbbf24; }
+        .b-bad { background: rgba(239,68,68,.2); color: #f87171; }
+        .secret { background: #0f172a; border: 1px dashed #38bdf8; border-radius: 10px; padding: 14px; margin-top: 14px; text-align: center; display: none; }
+        .secret .code { font-size: 26px; letter-spacing: 3px; font-weight: bold; color: #fde68a; direction: ltr; user-select: all; }
+        .secret .hint { font-size: 12px; color: #94a3b8; margin-top: 6px; }
+        .msg { color: #fca5a5; font-size: 13px; margin-top: 10px; min-height: 16px; }
+        .empty { color: #94a3b8; text-align: center; padding: 14px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <a href="global.html" class="btn-back">⬅ لوحة التحكم العامة</a>
+    <h1>👥 إدارة البائعين</h1>
+    <div id="openBanner" style="display:none;background:#422006;color:#fde68a;border:1px solid #f59e0b;border-radius:10px;padding:12px 14px;margin-bottom:18px;font-size:14px;line-height:1.7;">
+        ⚠️ التسجيل مفتوح حالياً بدون كود دعوة: أي شخص لديه رابط التطبيق يمكنه إنشاء حساب بائع.
+        لإعادة إغلاقه احذف المتغير <b dir="ltr">INVITE_REQUIRED</b> من Secrets في Replit ثم أعد تشغيل التطبيق.
+    </div>
+
+    <div class="panel">
+        <h2>🎟️ إنشاء كود دعوة</h2>
+        <div class="row">
+            <div class="field">
+                <label for="note">ملاحظة (لمن هذا الكود؟)</label>
+                <input id="note" maxlength="80" placeholder="مثال: متجر الأناقة – وهران">
+            </div>
+            <div class="field">
+                <label for="legacy">ربط ببيانات قديمة (اختياري)</label>
+                <input id="legacy" dir="ltr" placeholder="seller_xxxxxxxxx">
+            </div>
+            <button class="primary" id="createInvite" type="button">إنشاء الكود</button>
+        </div>
+        <div class="secret" id="secretBox">
+            <div class="code" id="secretCode"></div>
+            <div class="hint" id="secretHint"></div>
+        </div>
+        <div class="msg" id="inviteMsg" role="alert"></div>
+    </div>
+
+    <div class="panel">
+        <h2>🏪 البائعون المسجلون</h2>
+        <div id="usersBox">جاري التحميل...</div>
+    </div>
+
+    <div class="panel">
+        <h2>📨 الدعوات</h2>
+        <div id="invitesBox">جاري التحميل...</div>
+    </div>
+</div>
+
+<script>
+function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+}
+
+function getAdminToken(forcePrompt) {
+    let token = forcePrompt ? null : sessionStorage.getItem('adminToken');
+    if (!token) {
+        token = prompt('رمز المشرف (ADMIN_TOKEN) :');
+        if (token) sessionStorage.setItem('adminToken', token.trim());
+    }
+    return token ? token.trim() : null;
+}
+
+// Appel protégé : renvoie le JSON, ou null si l'accès est refusé
+async function adminApi(url, options) {
+    const token = getAdminToken(false);
+    if (!token) return null;
+    const res = await fetch(url, Object.assign({}, options, {
+        headers: Object.assign({ 'x-admin-token': token, 'Content-Type': 'application/json' }, (options || {}).headers)
+    }));
+    if (res.status === 401) {
+        sessionStorage.removeItem('adminToken');
+        alert('رمز غير صحيح.');
+        return null;
+    }
+    if (res.status === 429) { alert('محاولات كثيرة، انتظر دقيقة.'); return null; }
+    if (res.status === 503) { alert('ADMIN_TOKEN غير مُعرّف على الخادم (Replit > Secrets).'); return null; }
+    return res.json();
+}
+
+const fmt = iso => iso ? new Date(iso).toLocaleDateString('fr-FR') + ' ' + new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
+
+async function loadUsers() {
+    const data = await adminApi('/admin/users');
+    const box = document.getElementById('usersBox');
+    if (!data || !data.success) { box.innerHTML = '<div class="empty">تعذر التحميل</div>'; return; }
+    if (!data.users.length) { box.innerHTML = '<div class="empty">لا يوجد بائعون بعد</div>'; return; }
+
+    box.innerHTML = '<table><thead><tr><th>المتجر</th><th>الهاتف</th><th>الحالة</th><th>المعاملات</th><th>التقييم</th><th>آخر دخول</th><th>إجراءات</th></tr></thead><tbody>' +
+        data.users.map(u => {
+            const disabled = u.status === 'disabled';
+            return '<tr>' +
+                '<td>' + esc(u.shopName) + '</td>' +
+                '<td dir="ltr">' + esc(u.phone) + '</td>' +
+                '<td><span class="badge ' + (disabled ? 'b-bad' : 'b-ok') + '">' + (disabled ? 'موقوف' : 'نشط') + '</span></td>' +
+                '<td>' + esc(u.transactions) + '</td>' +
+                '<td>' + (u.rating && u.rating.count ? '⭐ ' + esc(u.rating.average) + ' (' + esc(u.rating.count) + ')' : '—') + '</td>' +
+                '<td>' + esc(fmt(u.lastLoginAt)) + '</td>' +
+                '<td>' +
+                    '<button class="small" data-act="reset" data-id="' + esc(u.sellerId) + '" data-name="' + esc(u.shopName) + '">🔑 كلمة سر مؤقتة</button>' +
+                    '<button class="small ' + (disabled ? '' : 'danger') + '" data-act="' + (disabled ? 'enable' : 'disable') + '" data-id="' + esc(u.sellerId) + '" data-name="' + esc(u.shopName) + '">' + (disabled ? '✅ تفعيل' : '⛔ إيقاف') + '</button>' +
+                '</td></tr>';
+        }).join('') + '</tbody></table>';
+}
+
+async function loadInvites() {
+    const data = await adminApi('/admin/invites');
+    const box = document.getElementById('invitesBox');
+    if (!data || !data.success) { box.innerHTML = '<div class="empty">تعذر التحميل</div>'; return; }
+    if (!data.invites.length) { box.innerHTML = '<div class="empty">لا توجد دعوات</div>'; return; }
+
+    const label = { active: ['ساري', 'b-warn'], used: ['مستعمل', 'b-ok'], expired: ['منتهي', 'b-bad'] };
+    box.innerHTML = '<table><thead><tr><th>ملاحظة</th><th>الحالة</th><th>الاستعمال</th><th>تنتهي</th><th>بيانات قديمة</th></tr></thead><tbody>' +
+        data.invites.map(i => {
+            const l = label[i.status];
+            return '<tr><td>' + esc(i.note || '—') + '</td>' +
+                '<td><span class="badge ' + l[1] + '">' + l[0] + '</span></td>' +
+                '<td>' + esc(i.usedBy || '—') + '</td>' +
+                '<td>' + esc(fmt(i.expiresAt)) + '</td>' +
+                '<td>' + (i.linkedToOldData ? 'نعم' : '—') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+}
+
+function showSecret(code, hint) {
+    document.getElementById('secretCode').textContent = code;
+    document.getElementById('secretHint').textContent = hint;
+    document.getElementById('secretBox').style.display = 'block';
+}
+
+document.getElementById('createInvite').addEventListener('click', async () => {
+    const msg = document.getElementById('inviteMsg');
+    msg.textContent = '';
+    const data = await adminApi('/admin/invites', {
+        method: 'POST',
+        body: JSON.stringify({
+            note: document.getElementById('note').value,
+            legacySellerId: document.getElementById('legacy').value.trim() || undefined
+        })
+    });
+    if (!data) return;
+    if (!data.success) { msg.textContent = data.message || 'حدث خطأ'; return; }
+    showSecret(data.code, 'انسخ الكود الآن وأرسله للبائع، لن يظهر مرة أخرى. صالح 14 يوماً ولاستعمال واحد.');
+    document.getElementById('note').value = '';
+    document.getElementById('legacy').value = '';
+    loadInvites();
+});
+
+document.getElementById('usersBox').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const name = btn.dataset.name;
+
+    if (btn.dataset.act === 'reset') {
+        if (!confirm('إنشاء كلمة سر مؤقتة للمتجر «' + name + '»؟ سيتم تسجيل خروجه من كل الأجهزة.')) return;
+        const data = await adminApi('/admin/users/' + encodeURIComponent(id) + '/reset-password', { method: 'POST', body: '{}' });
+        if (data && data.success) showSecret(data.password, 'كلمة السر المؤقتة للمتجر «' + name + '». أعطها له ثم اطلب منه تغييرها من صفحة «حسابي». لن تظهر مرة أخرى.');
+        else if (data) alert(data.message || 'حدث خطأ');
+        return;
+    }
+
+    const status = btn.dataset.act === 'disable' ? 'disabled' : 'active';
+    if (status === 'disabled' && !confirm('إيقاف حساب «' + name + '»؟ سيتم تسجيل خروجه فوراً.')) return;
+    const data = await adminApi('/admin/users/' + encodeURIComponent(id) + '/status', { method: 'POST', body: JSON.stringify({ status }) });
+    if (data && data.success) loadUsers();
+    else if (data) alert(data.message || 'حدث خطأ');
+});
+
+fetch('/config').then(r => r.json()).then(c => {
+    if (c && c.success && c.inviteRequired === false) document.getElementById('openBanner').style.display = 'block';
+}).catch(() => {});
+
+loadUsers();
+loadInvites();
+</script>
+</body>
+</html>
