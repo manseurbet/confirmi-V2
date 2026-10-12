@@ -7,7 +7,7 @@ const bcrypt = require("bcryptjs");
 const { normalizeClientPhone } = require("./phone");
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 5000);
 
 // Derrière le proxy Replit : nécessaire pour que req.ip soit l'IP du visiteur
 app.set("trust proxy", 1);
